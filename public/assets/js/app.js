@@ -798,7 +798,7 @@ const App = {
                         <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
                             <div>
                                 <div style="font-weight:500;">Products</div>
-                                <div style="font-size:13px;color:var(--text-secondary);">${status.products.count} synced${status.products.last_sync ? ' • Last: ' + new Date(status.products.last_sync).toLocaleDateString() : ''}</div>
+                                <div style="font-size:13px;color:var(--text-secondary);">${status.products.count} synced${status.products.last_sync ? ' • Last: ' + new Date(status.products.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
                             </div>
                             <button class="btn btn-secondary" onclick="App.runSync('products')">Sync Now</button>
                         </div>
@@ -808,7 +808,7 @@ const App = {
                         <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
                             <div>
                                 <div style="font-weight:500;">Categories</div>
-                                <div style="font-size:13px;color:var(--text-secondary);">${status.categories.count} synced${status.categories.last_sync ? ' • Last: ' + new Date(status.categories.last_sync).toLocaleDateString() : ''}</div>
+                                <div style="font-size:13px;color:var(--text-secondary);">${status.categories.count} synced${status.categories.last_sync ? ' • Last: ' + new Date(status.categories.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
                             </div>
                             <button class="btn btn-secondary" onclick="App.runSync('categories')">Sync Now</button>
                         </div>
@@ -818,7 +818,7 @@ const App = {
                         <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
                             <div>
                                 <div style="font-weight:500;">Authors</div>
-                                <div style="font-size:13px;color:var(--text-secondary);">${status.authors.count} synced${status.authors.last_sync ? ' • Last: ' + new Date(status.authors.last_sync).toLocaleDateString() : ''}</div>
+                                <div style="font-size:13px;color:var(--text-secondary);">${status.authors.count} synced${status.authors.last_sync ? ' • Last: ' + new Date(status.authors.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
                             </div>
                             <button class="btn btn-secondary" onclick="App.runSync('authors')">Sync Now</button>
                         </div>
@@ -828,7 +828,7 @@ const App = {
                         <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
                             <div>
                                 <div style="font-weight:500;">Page Blocks</div>
-                                <div style="font-size:13px;color:var(--text-secondary);">${status.blocks.count} synced${status.blocks.last_sync ? ' • Last: ' + new Date(status.blocks.last_sync).toLocaleDateString() : ''}</div>
+                                <div style="font-size:13px;color:var(--text-secondary);">${status.blocks.count} synced${status.blocks.last_sync ? ' • Last: ' + new Date(status.blocks.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
                             </div>
                             <button class="btn btn-secondary" onclick="App.runSync('blocks')">Sync Now</button>
                         </div>
@@ -841,13 +841,21 @@ const App = {
     },
     
     async runSync(type) {
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Syncing...';
+        
         this.toast(`Syncing ${type}...`);
         try {
             const result = await this.api(`/wordpress/sync/${type}`, { method: 'POST' });
-            this.toast(result.message);
+            this.toast(result.message || `${type} synced successfully!`, 'success');
             this.loadSync();
         } catch (error) {
-            this.toast(error.message, 'error');
+            this.toast(error.message || 'Sync failed', 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = originalText;
         }
     },
 

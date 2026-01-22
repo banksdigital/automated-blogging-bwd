@@ -13,7 +13,7 @@ class ProductController
         $brand = $params['brand'] ?? null;
         $category = $params['category'] ?? null;
         $stock = $params['stock'] ?? 'instock';
-        $limit = min((int)($params['limit'] ?? 50), 200);
+        $limit = min((int)($params['limit'] ?? 100), 5000);
         $offset = (int)($params['offset'] ?? 0);
 
         $sql = "SELECT * FROM wp_products WHERE 1=1";
