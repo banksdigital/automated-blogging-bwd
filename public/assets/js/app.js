@@ -507,7 +507,7 @@ const App = {
         
         try {
             const [products, brands] = await Promise.all([
-                this.api('/products?limit=100'),
+                this.api('/products?limit=5000'),
                 this.api('/products/brands')
             ]);
             
