@@ -184,10 +184,10 @@ public function syncProducts(): void
 
             // Upsert product
             Database::execute(
-                "INSERT INTO products (woo_id, name, description, short_description, price, regular_price, sale_price, stock_status, brand_slug, brand_name, category_slugs, category_names, tags, image_url, permalink, sku, updated_at)
+                "INSERT INTO wp_products (wc_product_id, title, description, short_description, price, regular_price, sale_price, stock_status, brand_slug, brand_name, category_slugs, category_names, tags, image_url, permalink, sku, synced_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                 ON DUPLICATE KEY UPDATE
-                name = VALUES(name),
+                title = VALUES(title),
                 description = VALUES(description),
                 short_description = VALUES(short_description),
                 price = VALUES(price),
@@ -202,7 +202,7 @@ public function syncProducts(): void
                 image_url = VALUES(image_url),
                 permalink = VALUES(permalink),
                 sku = VALUES(sku),
-                updated_at = NOW()",
+                synced_at = NOW()",
                 [
                     $product['id'],
                     $product['name'],
