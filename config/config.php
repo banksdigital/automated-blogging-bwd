@@ -24,16 +24,18 @@ if (file_exists($envFile)) {
 }
 
 // Helper function to get env values
-function env(string $key, $default = null) {
-    $value = getenv($key);
-    if ($value === false) {
-        return $default;
+if (!function_exists('env')) {
+    function env(string $key, $default = null) {
+        $value = getenv($key);
+        if ($value === false) {
+            return $default;
+        }
+        // Handle boolean strings
+        if (strtolower($value) === 'true') return true;
+        if (strtolower($value) === 'false') return false;
+        if (strtolower($value) === 'null') return null;
+        return $value;
     }
-    // Handle boolean strings
-    if (strtolower($value) === 'true') return true;
-    if (strtolower($value) === 'false') return false;
-    if (strtolower($value) === 'null') return null;
-    return $value;
 }
 
 return [
