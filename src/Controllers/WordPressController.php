@@ -127,113 +127,131 @@ class WordPressController
     /**
      * Sync products from WooCommerce
      */
-    public function syncProducts(): void
-    {
-        try {
-            $service = new WordPressService($this->config);
-            $products = $service->getAllProducts();
 
-            $synced = 0;
-            foreach ($products as $product) {
-                // Extract brand from attributes or tags
-                $brandSlug = null;
-                $brandName = null;
-                
-                if (!empty($product['attributes'])) {
-                    foreach ($product['attributes'] as $attr) {
-                        if (strtolower($attr['name']) === 'brand' && !empty($attr['options'])) {
-                            $brandName = $attr['options'][0];
-                            $brandSlug = $this->slugify($brandName);
-                            break;
-                        }
+public function syncProducts(): void
+{
+    try {
+        $service = new WordPressService($this->config);
+        $products = $service->getAllProducts();
+
+        $synced = 0;
+        foreach ($products as $product) {
+            // Extract brand - check brands taxonomy first, then tags as fallback
+            $brandSlug = null;
+            $brandName = null;
+            
+            // Check brands taxonomy
+            if (!empty($product['brands'])) {
+                $brandName = $product['brands'][0]['name'];
+                $brandSlug = $product['brands'][0]['slug'];
+            }
+            
+            // Fallback: check tags for brand (common pattern)
+            if (!$brandSlug && !empty($product['tags'])) {
+                // Get list of known brand slugs from tags
+                // Usually brand tags don't have generic names like "new", "sale", etc.
+                foreach ($product['tags'] as $tag) {
+                    // Skip common non-brand tags
+                    $skipTags = ['new', 'sale', 'featured', 'bestseller', 'new-in', 'shorts', 'dress', 'top', 'jacket'];
+                    if (in_array(strtolower($tag['slug']), $skipTags)) {
+                        continue;
                     }
-                }
-
-                // Extract categories
-                $categorySlugs = [];
-                $categoryNames = [];
-                if (!empty($product['categories'])) {
-                    foreach ($product['categories'] as $cat) {
-                        $categorySlugs[] = $cat['slug'];
-                        $categoryNames[] = $cat['name'];
+                    // Skip tags that start with "main" (like MainSS26)
+                    if (stripos($tag['slug'], 'main') === 0) {
+                        continue;
                     }
+                    // Use first likely brand tag
+                    $brandName = $tag['name'];
+                    $brandSlug = $tag['slug'];
+                    break;
                 }
-
-                // Extract tags
-                $tags = [];
-                if (!empty($product['tags'])) {
-                    foreach ($product['tags'] as $tag) {
-                        $tags[] = $tag['name'];
-                    }
-                }
-
-                // Get image URL
-                $imageUrl = null;
-                if (!empty($product['images']) && !empty($product['images'][0]['src'])) {
-                    $imageUrl = $product['images'][0]['src'];
-                }
-
-                Database::execute(
-                    "INSERT INTO wp_products (wc_product_id, title, description, short_description,
-                                             price, regular_price, sale_price, stock_status,
-                                             brand_slug, brand_name, category_slugs, category_names,
-                                             tags, image_url, permalink, sku, synced_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-                     ON DUPLICATE KEY UPDATE 
-                        title = VALUES(title),
-                        description = VALUES(description),
-                        short_description = VALUES(short_description),
-                        price = VALUES(price),
-                        regular_price = VALUES(regular_price),
-                        sale_price = VALUES(sale_price),
-                        stock_status = VALUES(stock_status),
-                        brand_slug = VALUES(brand_slug),
-                        brand_name = VALUES(brand_name),
-                        category_slugs = VALUES(category_slugs),
-                        category_names = VALUES(category_names),
-                        tags = VALUES(tags),
-                        image_url = VALUES(image_url),
-                        permalink = VALUES(permalink),
-                        sku = VALUES(sku),
-                        synced_at = NOW()",
-                    [
-                        $product['id'],
-                        $product['name'],
-                        $product['description'] ?? null,
-                        $product['short_description'] ?? null,
-                        $product['price'] ?: null,
-                        $product['regular_price'] ?: null,
-                        $product['sale_price'] ?: null,
-                        $product['stock_status'] ?? 'instock',
-                        $brandSlug,
-                        $brandName,
-                        json_encode($categorySlugs),
-                        json_encode($categoryNames),
-                        json_encode($tags),
-                        $imageUrl,
-                        $product['permalink'] ?? null,
-                        $product['sku'] ?? null
-                    ]
-                );
-                $synced++;
             }
 
-            $this->logActivity('sync_products', 'system', null, ['count' => $synced]);
+            // Extract categories
+            $categorySlugs = [];
+            $categoryNames = [];
+            if (!empty($product['categories'])) {
+                foreach ($product['categories'] as $cat) {
+                    $categorySlugs[] = $cat['slug'];
+                    $categoryNames[] = $cat['name'];
+                }
+            }
 
-            echo json_encode([
-                'success' => true,
-                'data' => ['synced' => $synced, 'message' => "Synced {$synced} products"]
-            ]);
+            // Extract tags
+            $tags = [];
+            if (!empty($product['tags'])) {
+                foreach ($product['tags'] as $tag) {
+                    $tags[] = $tag['name'];
+                }
+            }
 
-        } catch (\Exception $e) {
-            error_log("Product sync error: " . $e->getMessage());
-            http_response_code(500);
-            echo json_encode([
-                'success' => false,
-                'error' => ['code' => 'SYNC_ERROR', 'message' => $e->getMessage()]
-            ]);
+            // Get image URL
+            $imageUrl = null;
+            if (!empty($product['images']) && !empty($product['images'][0]['src'])) {
+                $imageUrl = $product['images'][0]['src'];
+            }
+
+            Database::execute(
+                "INSERT INTO wp_products (wc_product_id, title, description, short_description,
+                                         price, regular_price, sale_price, stock_status,
+                                         brand_slug, brand_name, category_slugs, category_names,
+                                         tags, image_url, permalink, sku, synced_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                 ON DUPLICATE KEY UPDATE 
+                    title = VALUES(title),
+                    description = VALUES(description),
+                    short_description = VALUES(short_description),
+                    price = VALUES(price),
+                    regular_price = VALUES(regular_price),
+                    sale_price = VALUES(sale_price),
+                    stock_status = VALUES(stock_status),
+                    brand_slug = VALUES(brand_slug),
+                    brand_name = VALUES(brand_name),
+                    category_slugs = VALUES(category_slugs),
+                    category_names = VALUES(category_names),
+                    tags = VALUES(tags),
+                    image_url = VALUES(image_url),
+                    permalink = VALUES(permalink),
+                    sku = VALUES(sku),
+                    synced_at = NOW()",
+                [
+                    $product['id'],
+                    $product['name'],
+                    $product['description'] ?? null,
+                    $product['short_description'] ?? null,
+                    $product['price'] ?: null,
+                    $product['regular_price'] ?: null,
+                    $product['sale_price'] ?: null,
+                    $product['stock_status'] ?? 'instock',
+                    $brandSlug,
+                    $brandName,
+                    json_encode($categorySlugs),
+                    json_encode($categoryNames),
+                    json_encode($tags),
+                    $imageUrl,
+                    $product['permalink'] ?? null,
+                    $product['sku'] ?? null
+                ]
+            );
+            $synced++;
         }
+
+        $this->logActivity('sync_products', 'system', null, ['count' => $synced]);
+
+        echo json_encode([
+            'success' => true,
+            'data' => ['synced' => $synced, 'message' => "Synced {$synced} products"]
+        ]);
+
+    } catch (\Exception $e) {
+        error_log("Product sync error: " . $e->getMessage());
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'error' => ['code' => 'SYNC_ERROR', 'message' => $e->getMessage()]
+        ]);
     }
+}
 
     /**
      * Sync reusable page blocks from Impreza theme
