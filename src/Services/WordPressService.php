@@ -356,4 +356,72 @@ class WordPressService
         $slug = preg_replace('/[\s-]+/', '-', $slug);
         return trim($slug, '-');
     }
+    
+    
+    /**
+ * Get all brand terms from WordPress REST API
+ */
+public function getAllBrands(): array
+{
+    $brands = [];
+    $page = 1;
+    $perPage = 100;
+    
+    do {
+        $url = rtrim($this->config['wordpress']['url'], '/') . "/wp-json/wp/v2/brand?per_page={$perPage}&page={$page}";
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode !== 200) {
+            break;
+        }
+        
+        $pageBrands = json_decode($response, true);
+        if (empty($pageBrands)) {
+            break;
+        }
+        
+        $brands = array_merge($brands, $pageBrands);
+        $page++;
+        
+    } while (count($pageBrands) === $perPage);
+    
+    return $brands;
+}
+
+/**
+ * Get brand for a specific product from WordPress REST API
+ */
+public function getProductBrand(int $productId): ?array
+{
+    $url = rtrim($this->config['wordpress']['url'], '/') . "/wp-json/wp/v2/brand?post={$productId}";
+    
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode !== 200) {
+        return null;
+    }
+    
+    $brands = json_decode($response, true);
+    
+    if (!empty($brands) && isset($brands[0])) {
+        return [
+            'id' => $brands[0]['id'],
+            'name' => $brands[0]['name'],
+            'slug' => $brands[0]['slug']
+        ];
+    }
+    
+    return null;
+}
 }

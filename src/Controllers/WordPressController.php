@@ -131,33 +131,33 @@ public function syncProducts(): void
 {
     try {
         $service = new WordPressService($this->config);
+        
+        // First, build a brand lookup map (ID => name/slug)
+        $allBrands = $service->getAllBrands();
+        $brandMap = [];
+        foreach ($allBrands as $brand) {
+            $brandMap[$brand['id']] = [
+                'name' => $brand['name'],
+                'slug' => $brand['slug']
+            ];
+        }
+        error_log("Loaded " . count($brandMap) . " brands for lookup");
+        
+        // Get all products from WooCommerce
         $products = $service->getAllProducts();
 
         $synced = 0;
         foreach ($products as $product) {
-            // Extract brand - check brands taxonomy first
+            // Get brand via WordPress REST API for this product
             $brandSlug = null;
             $brandName = null;
             
-            // 1. Check brands taxonomy
-            if (!empty($product['brands'])) {
-                $brandName = $product['brands'][0]['name'];
-                $brandSlug = $product['brands'][0]['slug'];
+            $productBrand = $service->getProductBrand($product['id']);
+            if ($productBrand) {
+                $brandName = $productBrand['name'];
+                $brandSlug = $productBrand['slug'];
             }
             
-            // 2. Fallback: check product attributes for pa_brands
-            if (!$brandSlug && !empty($product['attributes'])) {
-                foreach ($product['attributes'] as $attr) {
-                    if ($attr['slug'] === 'pa_brands' || strtolower($attr['name']) === 'brand' || strtolower($attr['name']) === 'brands') {
-                        if (!empty($attr['options'])) {
-                            $brandName = $attr['options'][0];
-                            $brandSlug = $this->slugify($brandName);
-                        }
-                        break;
-                    }
-                }
-            }
-
             // Extract categories
             $categorySlugs = [];
             $categoryNames = [];
@@ -172,39 +172,37 @@ public function syncProducts(): void
             $tags = [];
             if (!empty($product['tags'])) {
                 foreach ($product['tags'] as $tag) {
-                    $tags[] = $tag['name'];
+                    $tags[] = $tag['slug'];
                 }
             }
 
-            // Get image URL
+            // Get primary image
             $imageUrl = null;
-            if (!empty($product['images']) && !empty($product['images'][0]['src'])) {
+            if (!empty($product['images']) && isset($product['images'][0]['src'])) {
                 $imageUrl = $product['images'][0]['src'];
             }
 
-            Database::execute(
-                "INSERT INTO wp_products (wc_product_id, title, description, short_description,
-                                         price, regular_price, sale_price, stock_status,
-                                         brand_slug, brand_name, category_slugs, category_names,
-                                         tags, image_url, permalink, sku, synced_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-                 ON DUPLICATE KEY UPDATE 
-                    title = VALUES(title),
-                    description = VALUES(description),
-                    short_description = VALUES(short_description),
-                    price = VALUES(price),
-                    regular_price = VALUES(regular_price),
-                    sale_price = VALUES(sale_price),
-                    stock_status = VALUES(stock_status),
-                    brand_slug = VALUES(brand_slug),
-                    brand_name = VALUES(brand_name),
-                    category_slugs = VALUES(category_slugs),
-                    category_names = VALUES(category_names),
-                    tags = VALUES(tags),
-                    image_url = VALUES(image_url),
-                    permalink = VALUES(permalink),
-                    sku = VALUES(sku),
-                    synced_at = NOW()",
+            // Upsert product
+            $this->db->execute(
+                "INSERT INTO products (woo_id, name, description, short_description, price, regular_price, sale_price, stock_status, brand_slug, brand_name, category_slugs, category_names, tags, image_url, permalink, sku, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ON DUPLICATE KEY UPDATE
+                name = VALUES(name),
+                description = VALUES(description),
+                short_description = VALUES(short_description),
+                price = VALUES(price),
+                regular_price = VALUES(regular_price),
+                sale_price = VALUES(sale_price),
+                stock_status = VALUES(stock_status),
+                brand_slug = VALUES(brand_slug),
+                brand_name = VALUES(brand_name),
+                category_slugs = VALUES(category_slugs),
+                category_names = VALUES(category_names),
+                tags = VALUES(tags),
+                image_url = VALUES(image_url),
+                permalink = VALUES(permalink),
+                sku = VALUES(sku),
+                updated_at = NOW()",
                 [
                     $product['id'],
                     $product['name'],
@@ -225,6 +223,11 @@ public function syncProducts(): void
                 ]
             );
             $synced++;
+            
+            // Log progress every 100 products
+            if ($synced % 100 === 0) {
+                error_log("Synced {$synced} products...");
+            }
         }
 
         $this->logActivity('sync_products', 'system', null, ['count' => $synced]);
