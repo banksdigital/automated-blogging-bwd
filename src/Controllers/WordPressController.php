@@ -124,10 +124,9 @@ class WordPressController
         }
     }
 
-    /**
-     * Sync products from WooCommerce
-     */
-
+/**
+ * Sync products from WooCommerce
+ */
 public function syncProducts(): void
 {
     try {
@@ -136,34 +135,26 @@ public function syncProducts(): void
 
         $synced = 0;
         foreach ($products as $product) {
-            // Extract brand - check brands taxonomy first, then tags as fallback
+            // Extract brand - check brands taxonomy first
             $brandSlug = null;
             $brandName = null;
             
-            // Check brands taxonomy
+            // 1. Check brands taxonomy
             if (!empty($product['brands'])) {
                 $brandName = $product['brands'][0]['name'];
                 $brandSlug = $product['brands'][0]['slug'];
             }
             
-            // Fallback: check tags for brand (common pattern)
-            if (!$brandSlug && !empty($product['tags'])) {
-                // Get list of known brand slugs from tags
-                // Usually brand tags don't have generic names like "new", "sale", etc.
-                foreach ($product['tags'] as $tag) {
-                    // Skip common non-brand tags
-                    $skipTags = ['new', 'sale', 'featured', 'bestseller', 'new-in', 'shorts', 'dress', 'top', 'jacket'];
-                    if (in_array(strtolower($tag['slug']), $skipTags)) {
-                        continue;
+            // 2. Fallback: check product attributes for pa_brands
+            if (!$brandSlug && !empty($product['attributes'])) {
+                foreach ($product['attributes'] as $attr) {
+                    if ($attr['slug'] === 'pa_brands' || strtolower($attr['name']) === 'brand' || strtolower($attr['name']) === 'brands') {
+                        if (!empty($attr['options'])) {
+                            $brandName = $attr['options'][0];
+                            $brandSlug = $this->slugify($brandName);
+                        }
+                        break;
                     }
-                    // Skip tags that start with "main" (like MainSS26)
-                    if (stripos($tag['slug'], 'main') === 0) {
-                        continue;
-                    }
-                    // Use first likely brand tag
-                    $brandName = $tag['name'];
-                    $brandSlug = $tag['slug'];
-                    break;
                 }
             }
 
