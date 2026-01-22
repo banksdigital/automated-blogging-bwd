@@ -183,7 +183,7 @@ public function syncProducts(): void
             }
 
             // Upsert product
-            $this->db->execute(
+            Database::execute(
                 "INSERT INTO products (woo_id, name, description, short_description, price, regular_price, sale_price, stock_status, brand_slug, brand_name, category_slugs, category_names, tags, image_url, permalink, sku, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                 ON DUPLICATE KEY UPDATE

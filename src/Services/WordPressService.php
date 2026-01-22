@@ -368,7 +368,7 @@ public function getAllBrands(): array
     $perPage = 100;
     
     do {
-        $url = rtrim($this->config['wordpress']['api_url'], '/') . "/wp/v2/brand?per_page={$perPage}&page={$page}";
+        $url = $this->baseUrl . "/wp/v2/brand?per_page={$perPage}&page={$page}";
         
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -399,7 +399,7 @@ public function getAllBrands(): array
  */
 public function getProductBrand(int $productId): ?array
 {
-    $url = rtrim($this->config['wordpress']['api_url'], '/') . "/wp/v2/brand?post={$productId}";
+    $url = $this->baseUrl . "/wp/v2/brand?post={$productId}";
     
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
