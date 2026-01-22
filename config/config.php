@@ -42,7 +42,7 @@ return [
     // Application
     'app' => [
         'env' => env('APP_ENV', 'production'),
-        'url' => env('APP_URL', 'http://localhost:8000'),
+        'url' => env('APP_URL', 'https://automated-blogging-bwd-5x8fk.kinsta.app/'),
         'secret' => env('APP_SECRET'),
         'debug' => env('APP_ENV') === 'development',
     ],
