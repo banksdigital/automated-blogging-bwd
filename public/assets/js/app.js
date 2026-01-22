@@ -501,21 +501,41 @@ const App = {
     },
 
     // ==================== PRODUCTS ====================
-    async loadProducts() {
+    currentProductPage: 1,
+    currentProductSearch: '',
+    currentProductBrand: '',
+    
+    async loadProducts(page = 1) {
         const main = document.getElementById('main-content');
         main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         
+        this.currentProductPage = page;
+        
         try {
-            const [products, brands] = await Promise.all([
-                this.api('/products?limit=5000'),
+            const params = new URLSearchParams({
+                page: page,
+                per_page: 50
+            });
+            
+            if (this.currentProductSearch) {
+                params.append('search', this.currentProductSearch);
+            }
+            if (this.currentProductBrand) {
+                params.append('brand', this.currentProductBrand);
+            }
+            
+            const [response, brands] = await Promise.all([
+                this.api(`/products?${params}`),
                 this.api('/products/brands')
             ]);
+            
+            const { products, pagination } = response;
             
             main.innerHTML = `
                 <div class="page-header">
                     <div>
                         <h1 class="page-title">Products</h1>
-                        <p class="page-subtitle">${products.length} in-stock products synced from WooCommerce</p>
+                        <p class="page-subtitle">${pagination.total} in-stock products synced from WooCommerce</p>
                     </div>
                     <button class="btn btn-secondary" onclick="App.navigate('/settings/sync')">Sync Products</button>
                 </div>
@@ -523,11 +543,12 @@ const App = {
                 <div class="card" style="margin-bottom: 24px;">
                     <div class="card-body">
                         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-                            <input type="text" id="product-search" class="form-input" style="flex:1;min-width:200px;" placeholder="Search products...">
+                            <input type="text" id="product-search" class="form-input" style="flex:1;min-width:200px;" placeholder="Search products, SKUs, descriptions..." value="${this.escapeHtml(this.currentProductSearch)}">
                             <select id="brand-filter" class="form-input form-select" style="width:200px;">
                                 <option value="">All Brands</option>
-                                ${brands.map(b => `<option value="${b.brand_slug}">${this.escapeHtml(b.brand_name)} (${b.product_count})</option>`).join('')}
+                                ${brands.map(b => `<option value="${b.brand_slug}" ${this.currentProductBrand === b.brand_slug ? 'selected' : ''}>${this.escapeHtml(b.brand_name)} (${b.product_count})</option>`).join('')}
                             </select>
+                            <button class="btn btn-primary" onclick="App.searchProducts()">Search</button>
                         </div>
                     </div>
                 </div>
@@ -544,8 +565,8 @@ const App = {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${products.map(p => `
-                                    <tr data-brand="${p.brand_slug || ''}" data-title="${this.escapeHtml(p.title).toLowerCase()}">
+                                ${products.length ? products.map(p => `
+                                    <tr>
                                         <td>
                                             <div style="display:flex;align-items:center;gap:12px;">
                                                 ${p.image_url ? `<img src="${p.image_url}" style="width:40px;height:40px;object-fit:cover;">` : '<div style="width:40px;height:40px;background:var(--bg-tertiary);"></div>'}
@@ -559,30 +580,40 @@ const App = {
                                         <td>£${p.price || '—'}</td>
                                         <td><span style="color:var(--status-published);">●</span> In Stock</td>
                                     </tr>
-                                `).join('')}
+                                `).join('') : '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-secondary);">No products found</td></tr>'}
                             </tbody>
                         </table>
                     </div>
+                    
+                    ${pagination.total_pages > 1 ? `
+                    <div class="card-body" style="border-top:1px solid var(--border-default);display:flex;justify-content:space-between;align-items:center;">
+                        <div style="font-size:13px;color:var(--text-secondary);">
+                            Showing ${pagination.from}–${pagination.to} of ${pagination.total} products
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-secondary" onclick="App.loadProducts(${pagination.current_page - 1})" ${pagination.current_page <= 1 ? 'disabled' : ''}>← Previous</button>
+                            <span style="padding:8px 12px;font-size:13px;">Page ${pagination.current_page} of ${pagination.total_pages}</span>
+                            <button class="btn btn-secondary" onclick="App.loadProducts(${pagination.current_page + 1})" ${pagination.current_page >= pagination.total_pages ? 'disabled' : ''}>Next →</button>
+                        </div>
+                    </div>
+                    ` : ''}
                 </div>
             `;
             
-            document.getElementById('product-search').addEventListener('input', () => this.filterProducts());
-            document.getElementById('brand-filter').addEventListener('change', () => this.filterProducts());
+            // Enter key triggers search
+            document.getElementById('product-search').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') this.searchProducts();
+            });
             
         } catch (error) {
             main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
         }
     },
     
-    filterProducts() {
-        const search = document.getElementById('product-search').value.toLowerCase();
-        const brand = document.getElementById('brand-filter').value;
-        
-        document.querySelectorAll('#products-table tbody tr').forEach(row => {
-            const matchesSearch = row.dataset.title.includes(search);
-            const matchesBrand = !brand || row.dataset.brand === brand;
-            row.style.display = matchesSearch && matchesBrand ? '' : 'none';
-        });
+    searchProducts() {
+        this.currentProductSearch = document.getElementById('product-search').value;
+        this.currentProductBrand = document.getElementById('brand-filter').value;
+        this.loadProducts(1);
     },
 
     // ==================== ROADMAP ====================

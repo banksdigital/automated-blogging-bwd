@@ -10,39 +10,69 @@ class ProductController
 
     public function index(array $params): void
     {
+        $search = trim($params['search'] ?? '');
         $brand = $params['brand'] ?? null;
         $category = $params['category'] ?? null;
         $stock = $params['stock'] ?? 'instock';
-        $limit = min((int)($params['limit'] ?? 100), 5000);
-        $offset = (int)($params['offset'] ?? 0);
+        $page = max(1, (int)($params['page'] ?? 1));
+        $perPage = min((int)($params['per_page'] ?? 50), 100);
+        $offset = ($page - 1) * $perPage;
 
-        $sql = "SELECT * FROM wp_products WHERE 1=1";
+        // Build WHERE clause
+        $where = "WHERE 1=1";
         $bindings = [];
 
+        if ($search) {
+            $where .= " AND (title LIKE ? OR brand_name LIKE ? OR sku LIKE ? OR description LIKE ?)";
+            $searchTerm = "%{$search}%";
+            $bindings[] = $searchTerm;
+            $bindings[] = $searchTerm;
+            $bindings[] = $searchTerm;
+            $bindings[] = $searchTerm;
+        }
         if ($brand) {
-            $sql .= " AND brand_slug = ?";
+            $where .= " AND brand_slug = ?";
             $bindings[] = $brand;
         }
         if ($category) {
-            $sql .= " AND JSON_CONTAINS(category_slugs, ?)";
+            $where .= " AND JSON_CONTAINS(category_slugs, ?)";
             $bindings[] = json_encode($category);
         }
         if ($stock) {
-            $sql .= " AND stock_status = ?";
+            $where .= " AND stock_status = ?";
             $bindings[] = $stock;
         }
 
-        $sql .= " ORDER BY title LIMIT ? OFFSET ?";
-        $bindings[] = $limit;
+        // Get total count
+        $countResult = Database::queryOne("SELECT COUNT(*) as total FROM wp_products {$where}", $bindings);
+        $total = (int)($countResult['total'] ?? 0);
+
+        // Get paginated products
+        $sql = "SELECT * FROM wp_products {$where} ORDER BY title LIMIT ? OFFSET ?";
+        $bindings[] = $perPage;
         $bindings[] = $offset;
 
         $products = Database::query($sql, $bindings);
-        echo json_encode(['success' => true, 'data' => $products]);
+
+        echo json_encode([
+            'success' => true,
+            'data' => [
+                'products' => $products,
+                'pagination' => [
+                    'total' => $total,
+                    'per_page' => $perPage,
+                    'current_page' => $page,
+                    'total_pages' => ceil($total / $perPage),
+                    'from' => $total > 0 ? $offset + 1 : 0,
+                    'to' => min($offset + $perPage, $total)
+                ]
+            ]
+        ]);
     }
 
     public function search(array $params): void
     {
-        $query = $params['q'] ?? '';
+        $query = trim($params['q'] ?? '');
         $limit = min((int)($params['limit'] ?? 20), 50);
 
         if (strlen($query) < 2) {
@@ -50,11 +80,13 @@ class ProductController
             return;
         }
 
+        $searchTerm = "%{$query}%";
         $products = Database::query(
             "SELECT * FROM wp_products 
-             WHERE (title LIKE ? OR brand_name LIKE ?) AND stock_status = 'instock'
+             WHERE (title LIKE ? OR brand_name LIKE ? OR sku LIKE ? OR description LIKE ?) 
+             AND stock_status = 'instock'
              ORDER BY title LIMIT ?",
-            ["%{$query}%", "%{$query}%", $limit]
+            [$searchTerm, $searchTerm, $searchTerm, $searchTerm, $limit]
         );
 
         echo json_encode(['success' => true, 'data' => $products]);
