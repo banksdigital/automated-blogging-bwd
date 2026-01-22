@@ -510,6 +510,7 @@ const App = {
         if (!this.productColumns) {
             const saved = localStorage.getItem('productColumns');
             this.productColumns = saved ? JSON.parse(saved) : {
+                product_id: false,
                 image: true,
                 title: true,
                 sku: true,
@@ -585,6 +586,7 @@ const App = {
                                 <button class="btn btn-secondary" onclick="App.toggleColumnMenu()" id="column-btn">⚙ Columns</button>
                                 <div id="column-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--bg-primary);border:1px solid var(--border-default);border-radius:8px;padding:8px 0;min-width:180px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
                                     <div style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;">Show Columns</div>
+                                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.product_id ? 'checked' : ''} onchange="App.toggleProductColumn('product_id')"> Product ID</label>
                                     <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.image ? 'checked' : ''} onchange="App.toggleProductColumn('image')"> Image</label>
                                     <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.title ? 'checked' : ''} onchange="App.toggleProductColumn('title')"> Title</label>
                                     <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.sku ? 'checked' : ''} onchange="App.toggleProductColumn('sku')"> SKU</label>
@@ -648,6 +650,7 @@ const App = {
         const products = this.currentProducts || [];
         
         let headers = '';
+        if (cols.product_id) headers += '<th>ID</th>';
         if (cols.image || cols.title || cols.sku) headers += '<th>Product</th>';
         if (cols.brand) headers += '<th>Brand</th>';
         if (cols.price) headers += '<th>Price</th>';
@@ -658,6 +661,7 @@ const App = {
         
         const rows = products.length ? products.map(p => {
             let row = '<tr>';
+            if (cols.product_id) row += `<td style="font-family:monospace;font-size:12px;">${p.wc_product_id}</td>`;
             if (cols.image || cols.title || cols.sku) {
                 row += '<td><div style="display:flex;align-items:center;gap:12px;">';
                 if (cols.image) {
