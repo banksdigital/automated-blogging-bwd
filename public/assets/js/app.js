@@ -504,12 +504,42 @@ const App = {
     currentProductPage: 1,
     currentProductSearch: '',
     currentProductBrand: '',
+    productColumns: null,
+    
+    getProductColumns() {
+        if (!this.productColumns) {
+            const saved = localStorage.getItem('productColumns');
+            this.productColumns = saved ? JSON.parse(saved) : {
+                image: true,
+                title: true,
+                sku: true,
+                brand: true,
+                price: true,
+                regular_price: false,
+                sale_price: false,
+                categories: false,
+                stock: true
+            };
+        }
+        return this.productColumns;
+    },
+    
+    saveProductColumns() {
+        localStorage.setItem('productColumns', JSON.stringify(this.productColumns));
+    },
+    
+    toggleProductColumn(col) {
+        this.productColumns[col] = !this.productColumns[col];
+        this.saveProductColumns();
+        this.renderProductTable();
+    },
     
     async loadProducts(page = 1) {
         const main = document.getElementById('main-content');
         main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         
         this.currentProductPage = page;
+        const cols = this.getProductColumns();
         
         try {
             const params = new URLSearchParams({
@@ -529,84 +559,143 @@ const App = {
                 this.api('/products/brands')
             ]);
             
-            const { products, pagination } = response;
+            this.currentProducts = response.products;
+            this.currentPagination = response.pagination;
+            this.currentBrands = brands;
             
             main.innerHTML = `
                 <div class="page-header">
                     <div>
                         <h1 class="page-title">Products</h1>
-                        <p class="page-subtitle">${pagination.total} in-stock products synced from WooCommerce</p>
+                        <p class="page-subtitle">${response.pagination.total} in-stock products synced from WooCommerce</p>
                     </div>
                     <button class="btn btn-secondary" onclick="App.navigate('/settings/sync')">Sync Products</button>
                 </div>
                 
                 <div class="card" style="margin-bottom: 24px;">
                     <div class="card-body">
-                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
                             <input type="text" id="product-search" class="form-input" style="flex:1;min-width:200px;" placeholder="Search products, SKUs, descriptions..." value="${this.escapeHtml(this.currentProductSearch)}">
                             <select id="brand-filter" class="form-input form-select" style="width:200px;">
                                 <option value="">All Brands</option>
                                 ${brands.map(b => `<option value="${b.brand_slug}" ${this.currentProductBrand === b.brand_slug ? 'selected' : ''}>${this.escapeHtml(b.brand_name)} (${b.product_count})</option>`).join('')}
                             </select>
                             <button class="btn btn-primary" onclick="App.searchProducts()">Search</button>
+                            <div style="position:relative;">
+                                <button class="btn btn-secondary" onclick="App.toggleColumnMenu()" id="column-btn">⚙ Columns</button>
+                                <div id="column-menu" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--bg-primary);border:1px solid var(--border-default);border-radius:8px;padding:8px 0;min-width:180px;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+                                    <div style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;">Show Columns</div>
+                                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.image ? 'checked' : ''} onchange="App.toggleProductColumn('image')"> Image</label>
+                                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.title ? 'checked' : ''} onchange="App.toggleProductColumn('title')"> Title</label>
+                                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.sku ? 'checked' : ''} onchange="App.toggleProductColumn('sku')"> SKU</label>
+                                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.brand ? 'checked' : ''} onchange="App.toggleProductColumn('brand')"> Brand</label>
+                                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.price ? 'checked' : ''} onchange="App.toggleProductColumn('price')"> Price</label>
+                                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.regular_price ? 'checked' : ''} onchange="App.toggleProductColumn('regular_price')"> Regular Price</label>
+                                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.sale_price ? 'checked' : ''} onchange="App.toggleProductColumn('sale_price')"> Sale Price</label>
+                                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.categories ? 'checked' : ''} onchange="App.toggleProductColumn('categories')"> Categories</label>
+                                    <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;"><input type="checkbox" ${cols.stock ? 'checked' : ''} onchange="App.toggleProductColumn('stock')"> Stock</label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 
                 <div class="card">
-                    <div class="table-container">
-                        <table class="data-table" id="products-table">
-                            <thead>
-                                <tr>
-                                    <th>Product</th>
-                                    <th>Brand</th>
-                                    <th>Price</th>
-                                    <th>Stock</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${products.length ? products.map(p => `
-                                    <tr>
-                                        <td>
-                                            <div style="display:flex;align-items:center;gap:12px;">
-                                                ${p.image_url ? `<img src="${p.image_url}" style="width:40px;height:40px;object-fit:cover;">` : '<div style="width:40px;height:40px;background:var(--bg-tertiary);"></div>'}
-                                                <div>
-                                                    <div style="font-weight:500;">${this.escapeHtml(p.title)}</div>
-                                                    <div style="font-size:11px;color:var(--text-muted);">${p.sku || ''}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td>${this.escapeHtml(p.brand_name || '—')}</td>
-                                        <td>£${p.price || '—'}</td>
-                                        <td><span style="color:var(--status-published);">●</span> In Stock</td>
-                                    </tr>
-                                `).join('') : '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-secondary);">No products found</td></tr>'}
-                            </tbody>
-                        </table>
+                    <div class="table-container" id="products-table-container">
+                        ${this.renderProductTableHTML()}
                     </div>
                     
-                    ${pagination.total_pages > 1 ? `
+                    ${response.pagination.total_pages > 1 ? `
                     <div class="card-body" style="border-top:1px solid var(--border-default);display:flex;justify-content:space-between;align-items:center;">
                         <div style="font-size:13px;color:var(--text-secondary);">
-                            Showing ${pagination.from}–${pagination.to} of ${pagination.total} products
+                            Showing ${response.pagination.from}–${response.pagination.to} of ${response.pagination.total} products
                         </div>
                         <div style="display:flex;gap:8px;">
-                            <button class="btn btn-secondary" onclick="App.loadProducts(${pagination.current_page - 1})" ${pagination.current_page <= 1 ? 'disabled' : ''}>← Previous</button>
-                            <span style="padding:8px 12px;font-size:13px;">Page ${pagination.current_page} of ${pagination.total_pages}</span>
-                            <button class="btn btn-secondary" onclick="App.loadProducts(${pagination.current_page + 1})" ${pagination.current_page >= pagination.total_pages ? 'disabled' : ''}>Next →</button>
+                            <button class="btn btn-secondary" onclick="App.loadProducts(${response.pagination.current_page - 1})" ${response.pagination.current_page <= 1 ? 'disabled' : ''}>← Previous</button>
+                            <span style="padding:8px 12px;font-size:13px;">Page ${response.pagination.current_page} of ${response.pagination.total_pages}</span>
+                            <button class="btn btn-secondary" onclick="App.loadProducts(${response.pagination.current_page + 1})" ${response.pagination.current_page >= response.pagination.total_pages ? 'disabled' : ''}>Next →</button>
                         </div>
                     </div>
                     ` : ''}
                 </div>
             `;
             
-            // Enter key triggers search
             document.getElementById('product-search').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') this.searchProducts();
             });
             
+            // Close column menu when clicking outside
+            document.addEventListener('click', (e) => {
+                const menu = document.getElementById('column-menu');
+                const btn = document.getElementById('column-btn');
+                if (menu && !menu.contains(e.target) && e.target !== btn) {
+                    menu.style.display = 'none';
+                }
+            });
+            
         } catch (error) {
             main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
+        }
+    },
+    
+    toggleColumnMenu() {
+        const menu = document.getElementById('column-menu');
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    },
+    
+    renderProductTableHTML() {
+        const cols = this.getProductColumns();
+        const products = this.currentProducts || [];
+        
+        let headers = '';
+        if (cols.image || cols.title || cols.sku) headers += '<th>Product</th>';
+        if (cols.brand) headers += '<th>Brand</th>';
+        if (cols.price) headers += '<th>Price</th>';
+        if (cols.regular_price) headers += '<th>Regular</th>';
+        if (cols.sale_price) headers += '<th>Sale</th>';
+        if (cols.categories) headers += '<th>Categories</th>';
+        if (cols.stock) headers += '<th>Stock</th>';
+        
+        const rows = products.length ? products.map(p => {
+            let row = '<tr>';
+            if (cols.image || cols.title || cols.sku) {
+                row += '<td><div style="display:flex;align-items:center;gap:12px;">';
+                if (cols.image) {
+                    row += p.image_url ? `<img src="${p.image_url}" style="width:40px;height:40px;object-fit:cover;">` : '<div style="width:40px;height:40px;background:var(--bg-tertiary);"></div>';
+                }
+                if (cols.title || cols.sku) {
+                    row += '<div>';
+                    if (cols.title) row += `<div style="font-weight:500;">${this.escapeHtml(p.title)}</div>`;
+                    if (cols.sku) row += `<div style="font-size:11px;color:var(--text-muted);">${p.sku || ''}</div>`;
+                    row += '</div>';
+                }
+                row += '</div></td>';
+            }
+            if (cols.brand) row += `<td>${this.escapeHtml(p.brand_name || '—')}</td>`;
+            if (cols.price) row += `<td>£${p.price || '—'}</td>`;
+            if (cols.regular_price) row += `<td>£${p.regular_price || '—'}</td>`;
+            if (cols.sale_price) row += `<td>${p.sale_price ? '£' + p.sale_price : '—'}</td>`;
+            if (cols.categories) {
+                const cats = p.category_names ? JSON.parse(p.category_names) : [];
+                row += `<td style="font-size:12px;">${cats.slice(0,2).join(', ')}${cats.length > 2 ? '...' : ''}</td>`;
+            }
+            if (cols.stock) row += `<td><span style="color:var(--status-published);">●</span> In Stock</td>`;
+            row += '</tr>';
+            return row;
+        }).join('') : `<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text-secondary);">No products found</td></tr>`;
+        
+        return `
+            <table class="data-table" id="products-table">
+                <thead><tr>${headers}</tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    },
+    
+    renderProductTable() {
+        const container = document.getElementById('products-table-container');
+        if (container) {
+            container.innerHTML = this.renderProductTableHTML();
         }
     },
     
