@@ -47,15 +47,15 @@ return [
         'debug' => env('APP_ENV') === 'development',
     ],
     
-    // Database
-    'database' => [
-        'host' => env('DB_HOST', 'localhost'),
-        'port' => env('DB_PORT', '3306'),
-        'name' => env('DB_NAME', 'bwd_blog_platform'),
-        'user' => env('DB_USER', 'root'),
-        'password' => env('DB_PASSWORD', ''),
-        'charset' => 'utf8mb4',
-    ],
+// Database
+'database' => [
+    'host' => env('DB_HOST', 'contemporary-yellow-pheasan-uddqj-mysql.contemporary-yellow-pheasan-uddqj.svc.cluster.local'),
+    'port' => env('DB_PORT', '3306'),
+    'name' => env('DB_DATABASE', env('DB_NAME', 'contemporary-yellow-pheasant')),
+    'user' => env('DB_USERNAME', env('DB_USER', 'tahr')),
+    'password' => env('DB_PASSWORD', 'tX7+tE7_gL0_rJ0-uK6-'),
+    'charset' => 'utf8mb4',
+],
     
     // WordPress API
     'wordpress' => [
