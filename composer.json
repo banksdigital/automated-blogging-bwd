@@ -1,0 +1,29 @@
+{
+    "name": "blackwhitedenim/automated-blogging",
+    "description": "Automated blog platform with Claude AI integration",
+    "type": "project",
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Banks Digital",
+            "email": "dev@banksdigital.co.uk"
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "vlucas/phpdotenv": "^5.6",
+        "phpmailer/phpmailer": "^6.9"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "scripts": {
+        "migrate": "php migrations/migrate.php"
+    }
+}
