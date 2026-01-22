@@ -10,33 +10,31 @@ namespace App\Services;
 class WordPressService
 {
     private string $baseUrl;
-    private string $username;
-    private string $password;
-    private array $headers;
+    private string $wpUsername;
+    private string $wpPassword;
+    private string $wcKey;
+    private string $wcSecret;
 
     public function __construct(array $config)
     {
         $this->baseUrl = rtrim($config['wordpress']['api_url'], '/');
-        $this->username = $config['wordpress']['username'] ?? '';
-        $this->password = $config['wordpress']['password'] ?? '';
-        
-        $this->headers = [
-            'Content-Type: application/json',
-            'Authorization: Basic ' . base64_encode($this->username . ':' . $this->password)
-        ];
+        $this->wpUsername = $config['wordpress']['username'] ?? '';
+        $this->wpPassword = $config['wordpress']['password'] ?? '';
+        $this->wcKey = getenv('WC_CONSUMER_KEY') ?: '';
+        $this->wcSecret = getenv('WC_CONSUMER_SECRET') ?: '';
     }
 
     /**
-     * Test the API connection
+     * Test the WordPress API connection
      */
     public function testConnection(): array
     {
         try {
-            $result = $this->request('GET', '/wp/v2/users/me');
+            $result = $this->wpRequest('GET', '/wp/v2/users/me');
             return [
                 'success' => true,
                 'user' => $result['name'] ?? 'Unknown',
-                'message' => 'Connection successful'
+                'message' => 'WordPress connection successful'
             ];
         } catch (\Exception $e) {
             return [
@@ -46,7 +44,26 @@ class WordPressService
         }
     }
 
-    // ==================== POSTS ====================
+    /**
+     * Test the WooCommerce API connection
+     */
+    public function testWooCommerceConnection(): array
+    {
+        try {
+            $result = $this->wcRequest('GET', '/wc/v3/system_status');
+            return [
+                'success' => true,
+                'message' => 'WooCommerce connection successful'
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => $e->getMessage()
+            ];
+        }
+    }
+
+    // ==================== POSTS (WordPress API) ====================
 
     /**
      * Create a new WordPress post
@@ -61,14 +78,12 @@ class WordPressService
             'author' => $data['author'] ?? null,
         ];
         
-        // Add Yoast SEO meta if provided
         if (!empty($data['meta_description'])) {
             $payload['meta'] = [
                 '_yoast_wpseo_metadesc' => $data['meta_description']
             ];
         }
         
-        // Schedule post if date provided
         if (!empty($data['date'])) {
             $payload['date'] = $data['date'];
             if ($payload['status'] === 'publish') {
@@ -76,7 +91,7 @@ class WordPressService
             }
         }
 
-        return $this->request('POST', '/wp/v2/posts', $payload);
+        return $this->wpRequest('POST', '/wp/v2/posts', $payload);
     }
 
     /**
@@ -84,7 +99,7 @@ class WordPressService
      */
     public function updatePost(int $postId, array $data): array
     {
-        return $this->request('PUT', "/wp/v2/posts/{$postId}", $data);
+        return $this->wpRequest('PUT', "/wp/v2/posts/{$postId}", $data);
     }
 
     /**
@@ -92,40 +107,40 @@ class WordPressService
      */
     public function getPost(int $postId): array
     {
-        return $this->request('GET', "/wp/v2/posts/{$postId}");
+        return $this->wpRequest('GET', "/wp/v2/posts/{$postId}");
     }
 
-    // ==================== CATEGORIES ====================
+    // ==================== CATEGORIES (WordPress API) ====================
 
     /**
      * Get all blog categories
      */
     public function getCategories(int $perPage = 100): array
     {
-        return $this->request('GET', '/wp/v2/categories', ['per_page' => $perPage]);
+        return $this->wpRequest('GET', '/wp/v2/categories', ['per_page' => $perPage]);
     }
 
-    // ==================== AUTHORS ====================
+    // ==================== AUTHORS (WordPress API) ====================
 
     /**
      * Get all authors/users who can create posts
      */
     public function getAuthors(int $perPage = 100): array
     {
-        return $this->request('GET', '/wp/v2/users', [
+        return $this->wpRequest('GET', '/wp/v2/users', [
             'per_page' => $perPage,
             'who' => 'authors'
         ]);
     }
 
-    // ==================== PAGE BLOCKS (Impreza) ====================
+    // ==================== PAGE BLOCKS (WordPress API) ====================
 
     /**
      * Get all reusable page blocks
      */
     public function getPageBlocks(int $perPage = 100): array
     {
-        return $this->request('GET', '/wp/v2/us_page_block', [
+        return $this->wpRequest('GET', '/wp/v2/us_page_block', [
             'per_page' => $perPage,
             'status' => 'publish'
         ]);
@@ -141,15 +156,16 @@ class WordPressService
         $defaults = [
             'per_page' => 100,
             'status' => 'publish',
+            'stock_status' => 'instock',
             'orderby' => 'date',
             'order' => 'desc'
         ];
         
-        return $this->request('GET', '/wc/v3/products', array_merge($defaults, $params));
+        return $this->wcRequest('GET', '/wc/v3/products', array_merge($defaults, $params));
     }
 
     /**
-     * Get all products (paginated)
+     * Get all in-stock products (paginated)
      */
     public function getAllProducts(): array
     {
@@ -158,10 +174,11 @@ class WordPressService
         $perPage = 100;
         
         do {
-            $products = $this->request('GET', '/wc/v3/products', [
+            $products = $this->wcRequest('GET', '/wc/v3/products', [
                 'per_page' => $perPage,
                 'page' => $page,
-                'status' => 'publish'
+                'status' => 'publish',
+                'stock_status' => 'instock'
             ]);
             
             $allProducts = array_merge($allProducts, $products);
@@ -180,7 +197,7 @@ class WordPressService
      */
     public function getProductCategories(int $perPage = 100): array
     {
-        return $this->request('GET', '/wc/v3/products/categories', [
+        return $this->wcRequest('GET', '/wc/v3/products/categories', [
             'per_page' => $perPage,
             'hide_empty' => false
         ]);
@@ -188,19 +205,15 @@ class WordPressService
 
     /**
      * Get product brands (custom taxonomy)
-     * Note: Requires WooCommerce Brands plugin or custom taxonomy
      */
     public function getProductBrands(): array
     {
         try {
-            // Try standard brands endpoint first
-            return $this->request('GET', '/wc/v3/products/brands', ['per_page' => 100]);
+            return $this->wcRequest('GET', '/wc/v3/products/brands', ['per_page' => 100]);
         } catch (\Exception $e) {
-            // Try as custom taxonomy
             try {
-                return $this->request('GET', '/wp/v2/brand', ['per_page' => 100]);
+                return $this->wpRequest('GET', '/wp/v2/brand', ['per_page' => 100]);
             } catch (\Exception $e2) {
-                // Extract brands from products as fallback
                 return $this->extractBrandsFromProducts();
             }
         }
@@ -215,12 +228,11 @@ class WordPressService
         $brands = [];
         
         foreach ($products as $product) {
-            // Check attributes for brand
             if (!empty($product['attributes'])) {
                 foreach ($product['attributes'] as $attr) {
                     if (strtolower($attr['name']) === 'brand' && !empty($attr['options'])) {
                         foreach ($attr['options'] as $brand) {
-                            $slug = sanitize_title($brand);
+                            $slug = $this->slugify($brand);
                             if (!isset($brands[$slug])) {
                                 $brands[$slug] = [
                                     'name' => $brand,
@@ -245,29 +257,61 @@ class WordPressService
      */
     public function getMedia(int $mediaId): array
     {
-        return $this->request('GET', "/wp/v2/media/{$mediaId}");
+        return $this->wpRequest('GET', "/wp/v2/media/{$mediaId}");
     }
 
-    // ==================== HTTP REQUEST ====================
+    // ==================== HTTP REQUESTS ====================
 
     /**
-     * Make HTTP request to WordPress API
+     * Make WordPress API request (Basic Auth)
      */
-    private function request(string $method, string $endpoint, array $data = []): array
+    private function wpRequest(string $method, string $endpoint, array $data = []): array
     {
         $url = $this->baseUrl . $endpoint;
         
-        // Add query params for GET requests
         if ($method === 'GET' && !empty($data)) {
             $url .= '?' . http_build_query($data);
         }
         
+        $headers = [
+            'Content-Type: application/json',
+            'Authorization: Basic ' . base64_encode($this->wpUsername . ':' . $this->wpPassword)
+        ];
+        
+        return $this->makeRequest($method, $url, $headers, $data);
+    }
+
+    /**
+     * Make WooCommerce API request (OAuth)
+     */
+    private function wcRequest(string $method, string $endpoint, array $data = []): array
+    {
+        $url = $this->baseUrl . $endpoint;
+        
+        // Add OAuth credentials to URL for WooCommerce
+        $separator = strpos($url, '?') === false ? '?' : '&';
+        $url .= $separator . 'consumer_key=' . $this->wcKey . '&consumer_secret=' . $this->wcSecret;
+        
+        if ($method === 'GET' && !empty($data)) {
+            $url .= '&' . http_build_query($data);
+        }
+        
+        $headers = ['Content-Type: application/json'];
+        
+        return $this->makeRequest($method, $url, $headers, $data);
+    }
+
+    /**
+     * Make HTTP request
+     */
+    private function makeRequest(string $method, string $url, array $headers, array $data = []): array
+    {
         $ch = curl_init($url);
         
         $options = [
-            CURLOPT_HTTPHEADER => $this->headers,
+            CURLOPT_HTTPHEADER => $headers,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
+            CURLOPT_TIMEOUT => 60,
             CURLOPT_SSL_VERIFYPEER => true,
         ];
         
@@ -296,20 +340,20 @@ class WordPressService
         
         if ($httpCode >= 400) {
             $message = $decoded['message'] ?? "HTTP {$httpCode}";
-            throw new \Exception("WordPress API Error: {$message}");
+            throw new \Exception("API Error: {$message}");
         }
         
         return $decoded ?? [];
     }
-}
 
-/**
- * Helper function to create URL-safe slugs
- */
-function sanitize_title(string $title): string
-{
-    $slug = strtolower($title);
-    $slug = preg_replace('/[^a-z0-9\s-]/', '', $slug);
-    $slug = preg_replace('/[\s-]+/', '-', $slug);
-    return trim($slug, '-');
+    /**
+     * Helper to create URL-safe slugs
+     */
+    private function slugify(string $title): string
+    {
+        $slug = strtolower($title);
+        $slug = preg_replace('/[^a-z0-9\s-]/', '', $slug);
+        $slug = preg_replace('/[\s-]+/', '-', $slug);
+        return trim($slug, '-');
+    }
 }
