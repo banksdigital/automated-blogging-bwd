@@ -132,30 +132,38 @@ public function syncProducts(): void
     try {
         $service = new WordPressService($this->config);
         
-        // First, build a brand lookup map (ID => name/slug)
+        // Build product -> brand map by querying each brand's products (much faster than per-product lookup)
         $allBrands = $service->getAllBrands();
-        $brandMap = [];
+        $productBrandMap = [];
+        
+        error_log("Building brand map from " . count($allBrands) . " brands...");
+        
         foreach ($allBrands as $brand) {
-            $brandMap[$brand['id']] = [
-                'name' => $brand['name'],
-                'slug' => $brand['slug']
-            ];
+            // Get all product IDs for this brand
+            $brandProductIds = $service->getProductIdsByBrand($brand['id']);
+            foreach ($brandProductIds as $productId) {
+                $productBrandMap[$productId] = [
+                    'name' => $brand['name'],
+                    'slug' => $brand['slug']
+                ];
+            }
         }
-        error_log("Loaded " . count($brandMap) . " brands for lookup");
+        
+        error_log("Brand map built: " . count($productBrandMap) . " products have brands assigned");
         
         // Get all products from WooCommerce
         $products = $service->getAllProducts();
+        error_log("Fetched " . count($products) . " products from WooCommerce");
 
         $synced = 0;
         foreach ($products as $product) {
-            // Get brand via WordPress REST API for this product
+            // Look up brand from pre-built map (no API call needed)
             $brandSlug = null;
             $brandName = null;
             
-            $productBrand = $service->getProductBrand($product['id']);
-            if ($productBrand) {
-                $brandName = $productBrand['name'];
-                $brandSlug = $productBrand['slug'];
+            if (isset($productBrandMap[$product['id']])) {
+                $brandName = $productBrandMap[$product['id']]['name'];
+                $brandSlug = $productBrandMap[$product['id']]['slug'];
             }
             
             // Extract categories

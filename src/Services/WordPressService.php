@@ -424,4 +424,43 @@ public function getProductBrand(int $productId): ?array
     
     return null;
 }
+
+/**
+ * Get all product IDs that belong to a specific brand
+ */
+public function getProductIdsByBrand(int $brandId): array
+{
+    $productIds = [];
+    $page = 1;
+    $perPage = 100;
+    
+    do {
+        $url = $this->baseUrl . "/wp/v2/product?brand={$brandId}&per_page={$perPage}&page={$page}&_fields=id";
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode !== 200) {
+            break;
+        }
+        
+        $products = json_decode($response, true);
+        if (empty($products)) {
+            break;
+        }
+        
+        foreach ($products as $product) {
+            $productIds[] = $product['id'];
+        }
+        
+        $page++;
+        
+    } while (count($products) === $perPage);
+    
+    return $productIds;
+}
 }

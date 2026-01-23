@@ -118,6 +118,8 @@ const App = {
             this.loadBrainstorm();
         } else if (path === '/products') {
             this.loadProducts();
+        } else if (path === '/autopilot') {
+            this.loadAutoPilot();
         } else if (path === '/settings') {
             this.loadSettings();
         } else if (path === '/settings/brand-voice') {
@@ -133,57 +135,122 @@ const App = {
         main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         
         try {
-            const [stats, posts] = await Promise.all([
+            const [stats, contentStats, reviewQueue, posts] = await Promise.all([
                 this.api('/stats/dashboard'),
-                this.api('/posts?status=scheduled,review,draft&limit=5')
+                this.api('/content/stats').catch(() => ({ pending_generation: 0, awaiting_review: 0, scheduled: 0, publishing_this_week: 0 })),
+                this.api('/content/review-queue').catch(() => []),
+                this.api('/posts?status=scheduled&limit=5')
             ]);
             
             main.innerHTML = `
                 <div class="page-header">
                     <div>
-                        <h1 class="page-title">Dashboard</h1>
-                        <p class="page-subtitle">${new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })} Overview</p>
+                        <h1 class="page-title">Content Dashboard</h1>
+                        <p class="page-subtitle">${new Date().toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
                     </div>
-                    <button class="btn btn-primary" onclick="App.navigate('/posts/new')">+ New Post</button>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-secondary" onclick="App.navigate('/autopilot')">⚙ Auto-Pilot Settings</button>
+                        <button class="btn btn-primary" onclick="App.navigate('/posts/new')">+ New Post</button>
+                    </div>
+                </div>
+                
+                <!-- Auto-Pilot Status -->
+                <div class="card" style="margin-bottom:24px;border-left:4px solid var(--accent-primary);">
+                    <div class="card-body">
+                        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+                            <div>
+                                <div style="font-weight:600;font-size:16px;">🤖 Auto-Pilot Status</div>
+                                <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">
+                                    ${contentStats.awaiting_review > 0 
+                                        ? `<span style="color:var(--status-review);">●</span> ${contentStats.awaiting_review} posts awaiting your review` 
+                                        : '<span style="color:var(--status-published);">●</span> All caught up!'}
+                                </div>
+                            </div>
+                            <div style="display:flex;gap:8px;">
+                                <button class="btn btn-secondary" onclick="App.generateContent()" id="generate-btn">Generate Content</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="stats-grid">
+                    <div class="stat-card" style="cursor:pointer;" onclick="App.navigate('/posts?status=review')">
+                        <div class="stat-label">Awaiting Review</div>
+                        <div class="stat-value" style="color:${contentStats.awaiting_review > 0 ? 'var(--status-review)' : 'inherit'};">${contentStats.awaiting_review || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Scheduled</div>
+                        <div class="stat-value">${contentStats.scheduled || stats.scheduled || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Publishing This Week</div>
+                        <div class="stat-value">${contentStats.publishing_this_week || 0}</div>
+                    </div>
                     <div class="stat-card">
                         <div class="stat-label">Published This Month</div>
                         <div class="stat-value">${stats.published_this_month || 0}</div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Scheduled</div>
-                        <div class="stat-value">${stats.scheduled || 0}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">In Draft</div>
-                        <div class="stat-value">${stats.draft || 0}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Ideas</div>
-                        <div class="stat-value">${stats.ideas || 0}</div>
-                    </div>
                 </div>
                 
+                <!-- Review Queue -->
+                ${reviewQueue.length > 0 ? `
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">📝 Review Queue</span>
+                        <span style="font-size:12px;color:var(--text-secondary);">AI-generated posts awaiting your approval</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Post</th>
+                                    <th>Type</th>
+                                    <th>Publish Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${reviewQueue.map(post => `
+                                    <tr>
+                                        <td>
+                                            <div style="font-weight:500;">${this.escapeHtml(post.title)}</div>
+                                            <div style="font-size:12px;color:var(--text-secondary);">${post.event_name || post.template_name || 'Manual'}</div>
+                                        </td>
+                                        <td><span class="badge">${post.content_type || 'post'}</span></td>
+                                        <td>${post.target_publish_date ? new Date(post.target_publish_date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) : '—'}</td>
+                                        <td>
+                                            <div style="display:flex;gap:8px;">
+                                                <button class="btn btn-secondary btn-sm" onclick="App.navigate('/posts/${post.id}')">Review</button>
+                                                <button class="btn btn-primary btn-sm" onclick="App.approvePost(${post.id})">Approve</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                ` : ''}
+                
+                <!-- Upcoming Scheduled Posts -->
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title">Upcoming Posts</span>
-                        <a href="/posts" onclick="event.preventDefault(); App.navigate('/posts');" style="font-size: 12px; color: var(--text-secondary);">View All →</a>
+                        <span class="card-title">📅 Upcoming Posts</span>
+                        <a href="/roadmap" onclick="event.preventDefault(); App.navigate('/roadmap');" style="font-size:12px;color:var(--text-secondary);">View Roadmap →</a>
                     </div>
                     <div class="table-container">
                         <table class="data-table">
                             <tbody>
                                 ${posts.length ? posts.map(post => `
-                                    <tr onclick="App.navigate('/posts/${post.id}')" style="cursor: pointer;">
+                                    <tr onclick="App.navigate('/posts/${post.id}')" style="cursor:pointer;">
                                         <td>
-                                            <div style="font-weight: 500;">${this.escapeHtml(post.title)}</div>
-                                            <div style="font-size: 12px; color: var(--text-secondary);">${post.section_count || 0} sections</div>
+                                            <div style="font-weight:500;">${this.escapeHtml(post.title)}</div>
+                                            <div style="font-size:12px;color:var(--text-secondary);">${post.section_count || 0} sections</div>
                                         </td>
-                                        <td style="color: var(--text-secondary);">${post.scheduled_date ? new Date(post.scheduled_date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) : '—'}</td>
+                                        <td style="color:var(--text-secondary);">${post.scheduled_date ? new Date(post.scheduled_date).toLocaleDateString('en-GB', { weekday: 'short', month: 'short', day: 'numeric' }) : '—'}</td>
                                         <td><span class="status-badge status-${post.status}"><span class="status-dot"></span> ${post.status}</span></td>
                                     </tr>
-                                `).join('') : '<tr><td colspan="3" style="text-align:center;padding:40px;color:var(--text-secondary);">No posts yet. Create your first post!</td></tr>'}
+                                `).join('') : '<tr><td colspan="3" style="text-align:center;padding:40px;color:var(--text-secondary);">No scheduled posts. Generate some content!</td></tr>'}
                             </tbody>
                         </table>
                     </div>
@@ -191,6 +258,33 @@ const App = {
             `;
         } catch (error) {
             main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error loading dashboard</div><p>${error.message}</p></div>`;
+        }
+    },
+    
+    async generateContent() {
+        const btn = document.getElementById('generate-btn');
+        btn.disabled = true;
+        btn.textContent = 'Generating...';
+        
+        try {
+            const result = await this.api('/content/generate-pending', { method: 'POST' });
+            this.toast(result.message || 'Content generated!', 'success');
+            this.loadDashboard();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Generate Content';
+        }
+    },
+    
+    async approvePost(postId) {
+        try {
+            await this.api(`/content/approve/${postId}`, { method: 'POST' });
+            this.toast('Post approved and scheduled!', 'success');
+            this.loadDashboard();
+        } catch (error) {
+            this.toast(error.message, 'error');
         }
     },
 
@@ -980,6 +1074,164 @@ const App = {
         } finally {
             btn.disabled = false;
             btn.textContent = originalText;
+        }
+    },
+
+    // ==================== AUTO-PILOT ====================
+    async loadAutoPilot() {
+        const main = document.getElementById('main-content');
+        main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        
+        try {
+            const [templates, scheduled, stats] = await Promise.all([
+                this.api('/content/templates').catch(() => []),
+                this.api('/content/scheduled').catch(() => []),
+                this.api('/content/stats').catch(() => ({}))
+            ]);
+            
+            main.innerHTML = `
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Auto-Pilot Settings</h1>
+                        <p class="page-subtitle">Configure automated content generation</p>
+                    </div>
+                </div>
+                
+                <!-- Quick Actions -->
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">Quick Actions</span>
+                    </div>
+                    <div class="card-body">
+                        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                            <button class="btn btn-primary" onclick="App.seedEvents()">🗓 Seed Seasonal Events</button>
+                            <button class="btn btn-primary" onclick="App.seedTemplates()">📝 Seed Content Templates</button>
+                            <button class="btn btn-secondary" onclick="App.generateCalendar()">📅 Generate 3-Month Calendar</button>
+                            <button class="btn btn-secondary" onclick="App.generateContent()">🤖 Generate Pending Content</button>
+                        </div>
+                        <p style="font-size:12px;color:var(--text-secondary);margin-top:12px;">
+                            First time? Click "Seed Seasonal Events" and "Seed Content Templates" to set up the defaults, then "Generate 3-Month Calendar" to create scheduled content slots.
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Stats -->
+                <div class="stats-grid" style="margin-bottom:24px;">
+                    <div class="stat-card">
+                        <div class="stat-label">Pending Generation</div>
+                        <div class="stat-value">${stats.pending_generation || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Awaiting Review</div>
+                        <div class="stat-value">${stats.awaiting_review || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Scheduled</div>
+                        <div class="stat-value">${stats.scheduled || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">This Week</div>
+                        <div class="stat-value">${stats.publishing_this_week || 0}</div>
+                    </div>
+                </div>
+                
+                <!-- Content Templates -->
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">Content Templates</span>
+                        <span style="font-size:12px;color:var(--text-secondary);">${templates.length} active templates</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Template</th>
+                                    <th>Category</th>
+                                    <th>Type</th>
+                                    <th>Frequency</th>
+                                    <th>Lead Days</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${templates.length ? templates.map(t => `
+                                    <tr>
+                                        <td style="font-weight:500;">${this.escapeHtml(t.name)}</td>
+                                        <td><span class="badge badge-${t.category}">${t.category}</span></td>
+                                        <td>${t.content_type}</td>
+                                        <td>${t.frequency || 'One-time'}</td>
+                                        <td>${t.lead_days} days</td>
+                                    </tr>
+                                `).join('') : '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-secondary);">No templates yet. Click "Seed Content Templates" above.</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Scheduled Content -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">Scheduled Content Pipeline</span>
+                        <span style="font-size:12px;color:var(--text-secondary);">${scheduled.length} items in pipeline</span>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Content</th>
+                                    <th>Event</th>
+                                    <th>Publish Date</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${scheduled.length ? scheduled.map(s => `
+                                    <tr>
+                                        <td style="font-weight:500;">${this.escapeHtml(s.template_name || 'Unknown')}</td>
+                                        <td>${s.event_name || '—'}</td>
+                                        <td>${new Date(s.target_publish_date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                                        <td><span class="status-badge status-${s.status}"><span class="status-dot"></span> ${s.status}</span></td>
+                                    </tr>
+                                `).join('') : '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-secondary);">No scheduled content. Click "Generate 3-Month Calendar" above.</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
+        }
+    },
+    
+    async seedEvents() {
+        this.toast('Seeding seasonal events...');
+        try {
+            const result = await this.api('/content/seed-events', { method: 'POST' });
+            this.toast(result.message || 'Events seeded!', 'success');
+            this.loadAutoPilot();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async seedTemplates() {
+        this.toast('Seeding content templates...');
+        try {
+            const result = await this.api('/content/seed-templates', { method: 'POST' });
+            this.toast(result.message || 'Templates seeded!', 'success');
+            this.loadAutoPilot();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async generateCalendar() {
+        this.toast('Generating content calendar...');
+        try {
+            const result = await this.api('/content/calendar/generate', { method: 'POST', body: { months: 3 } });
+            this.toast(result.message || 'Calendar generated!', 'success');
+            this.loadAutoPilot();
+        } catch (error) {
+            this.toast(error.message, 'error');
         }
     },
 

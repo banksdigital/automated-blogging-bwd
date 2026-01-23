@@ -6,339 +6,283 @@ use App\Helpers\Database;
 
 /**
  * Claude AI Service
- * 
- * Handles all interactions with the Claude API for content generation
+ * Handles all AI content generation
  */
 class ClaudeService
 {
     private string $apiKey;
     private string $model;
     private int $maxTokens;
-    private array $brandVoice = [];
+    private string $baseUrl = 'https://api.anthropic.com/v1/messages';
 
     public function __construct(array $config)
     {
-        $this->apiKey = $config['claude']['api_key'];
-        $this->model = $config['claude']['model'];
-        $this->maxTokens = $config['claude']['max_tokens'];
-        $this->loadBrandVoice();
-    }
-
-    /**
-     * Load active brand voice attributes from database
-     */
-    private function loadBrandVoice(): void
-    {
-        try {
-            $this->brandVoice = Database::query(
-                "SELECT attribute, description, examples, weight FROM brand_voice WHERE is_active = TRUE ORDER BY weight DESC"
-            );
-        } catch (\Exception $e) {
-            error_log("Failed to load brand voice: " . $e->getMessage());
-            $this->brandVoice = [];
-        }
-    }
-
-    /**
-     * Build the brand voice system prompt
-     */
-    private function buildBrandVoicePrompt(): string
-    {
-        $prompt = "You are writing for Black White Denim, a women's designer fashion boutique in Wilmslow, UK.\n\n";
-        $prompt .= "BRAND VOICE - Write in a tone that is:\n";
-
-        foreach ($this->brandVoice as $voice) {
-            $examples = json_decode($voice['examples'], true) ?? [];
-            $prompt .= sprintf(
-                "- **%s**: %s\n  Examples: %s\n",
-                $voice['attribute'],
-                $voice['description'],
-                implode(', ', $examples)
-            );
-        }
-
-        $prompt .= "\nIMPORTANT WRITING RULES:\n";
-        $prompt .= "- Write in British English (colour, favourite, realise)\n";
-        $prompt .= "- Never use clichéd words like 'elevate', 'curate', 'journey', 'aesthetic'\n";
-        $prompt .= "- Keep paragraphs short - 2-3 sentences max\n";
-        $prompt .= "- Avoid starting sentences with 'Whether' or 'From X to Y'\n";
-        $prompt .= "- No excessive exclamation marks\n";
-        $prompt .= "- Sound like a friend giving advice, not a magazine article\n";
-        $prompt .= "- Be specific, not generic. Name actual situations.\n";
-        $prompt .= "- Don't use hashtags or social media speak\n";
-
-        return $prompt;
+        $this->apiKey = $config['claude']['api_key'] ?? getenv('CLAUDE_API_KEY');
+        $this->model = $config['claude']['model'] ?? 'claude-sonnet-4-20250514';
+        $this->maxTokens = $config['claude']['max_tokens'] ?? 4096;
     }
 
     /**
      * Generate a complete blog post
      */
-    public function generateBlogPost(string $topic, array $sectionTopics, ?string $seasonalContext = null): array
+    public function generateBlogPost(array $params): array
     {
-        $systemPrompt = $this->buildBrandVoicePrompt();
-
-        $userPrompt = "Write a blog post about: {$topic}\n\n";
-
-        if ($seasonalContext) {
-            $userPrompt .= "This is for the seasonal event: {$seasonalContext}\n\n";
-        }
-
-        $userPrompt .= "Structure the post with these sections:\n";
-        foreach ($sectionTopics as $i => $section) {
-            $userPrompt .= sprintf("%d. %s\n", $i + 1, $section);
-        }
-
-        $userPrompt .= "\nFor each section, provide:\n";
-        $userPrompt .= "- A catchy H2 heading (not generic, make it interesting)\n";
-        $userPrompt .= "- 2-3 short paragraphs of content\n";
-        $userPrompt .= "- A suggested CTA link text (e.g., 'Shop Saint Laurent sunglasses')\n\n";
-
-        $userPrompt .= "Also provide:\n";
-        $userPrompt .= "- An engaging intro paragraph (no heading, just the hook to draw readers in)\n";
-        $userPrompt .= "- A strong closing paragraph that wraps up naturally\n";
-        $userPrompt .= "- A meta description for SEO (max 155 characters, compelling)\n\n";
-
-        $userPrompt .= "Return ONLY valid JSON with this exact structure:\n";
-        $userPrompt .= '{"intro": "intro text here", "sections": [{"heading": "H2 heading", "content": "paragraph content", "cta": "CTA text"}], "outro": "closing text", "meta_description": "SEO description"}';
-        $userPrompt .= "\n\nDo not include any text outside the JSON. No markdown code blocks.";
-
-        $response = $this->makeRequest($systemPrompt, $userPrompt);
+        $brandVoice = $this->getBrandVoice();
+        $products = $params['products'] ?? [];
         
-        // Parse JSON from response
-        if (isset($response['content'][0]['text'])) {
-            $text = $response['content'][0]['text'];
-            // Clean up any markdown code blocks
-            $text = preg_replace('/```json\s*/', '', $text);
-            $text = preg_replace('/```\s*/', '', $text);
-            $text = trim($text);
-            
-            $parsed = json_decode($text, true);
-            if ($parsed) {
-                return ['success' => true, 'data' => $parsed];
+        $productContext = '';
+        if (!empty($products)) {
+            $productContext = "\n\nAvailable products to feature (choose the most relevant ones):\n";
+            foreach (array_slice($products, 0, 15) as $p) {
+                $productContext .= "- {$p['title']} by {$p['brand_name']} (£{$p['price']})\n";
             }
         }
+
+        $systemPrompt = <<<PROMPT
+You are a content writer for Black White Denim, a UK-based premium fashion retailer. 
+
+Brand Voice Guidelines:
+{$brandVoice}
+
+Writing Style:
+- Warm, knowledgeable, and inspiring
+- Fashion-forward but accessible
+- Never pushy or salesy
+- Use British English spelling
+- Write for a sophisticated audience who appreciates quality fashion
+
+Format Requirements:
+- Create engaging, SEO-friendly content
+- Each section should be 100-150 words
+- Include natural product mentions where relevant
+- Use headers that are descriptive and engaging
+PROMPT;
+
+        $userPrompt = <<<PROMPT
+{$params['prompt']}
+{$productContext}
+
+Please generate a complete blog post with the following JSON structure:
+{
+    "title": "Engaging SEO-friendly title",
+    "meta_description": "155 character meta description for SEO",
+    "intro": "Engaging introduction paragraph (100-150 words)",
+    "sections": [
+        {
+            "heading": "Section heading",
+            "content": "Section content (100-150 words)",
+            "cta_text": "Shop Now or similar",
+            "cta_url": "/shop/category"
+        }
+    ],
+    "outro": "Closing paragraph with call to action (50-100 words)"
+}
+
+Generate 3-5 sections depending on the content type. Return ONLY valid JSON, no markdown or explanation.
+PROMPT;
+
+        $response = $this->callApi($systemPrompt, $userPrompt);
         
-        return ['success' => false, 'error' => 'Failed to parse AI response', 'raw' => $response];
+        // Parse JSON response
+        $content = $this->parseJsonResponse($response);
+        
+        return $content;
     }
 
     /**
-     * Generate a single section
+     * Generate content for a single section
      */
-    public function generateSection(string $topic, string $sectionFocus, ?string $context = null): array
+    public function generateSection(array $params): array
     {
-        $systemPrompt = $this->buildBrandVoicePrompt();
-
-        $userPrompt = "Write a single blog section about: {$sectionFocus}\n\n";
+        $brandVoice = $this->getBrandVoice();
         
-        if ($context) {
-            $userPrompt .= "Context: This is part of a larger blog post about {$context}\n\n";
-        }
-
-        $userPrompt .= "Provide:\n";
-        $userPrompt .= "- A catchy H2 heading\n";
-        $userPrompt .= "- 2-3 paragraphs of content\n";
-        $userPrompt .= "- A CTA text suggestion\n\n";
-
-        $userPrompt .= "Return ONLY valid JSON:\n";
-        $userPrompt .= '{"heading": "H2 heading", "content": "paragraph content here", "cta": "CTA text"}';
-
-        $response = $this->makeRequest($systemPrompt, $userPrompt);
+        $systemPrompt = "You are a content writer for Black White Denim, a UK premium fashion retailer. {$brandVoice}";
         
-        if (isset($response['content'][0]['text'])) {
-            $text = preg_replace('/```json\s*/', '', $response['content'][0]['text']);
-            $text = preg_replace('/```\s*/', '', $text);
-            $parsed = json_decode(trim($text), true);
-            if ($parsed) {
-                return ['success' => true, 'data' => $parsed];
-            }
-        }
-        
-        return ['success' => false, 'error' => 'Failed to parse AI response'];
-    }
+        $userPrompt = <<<PROMPT
+Write a blog section about: {$params['topic']}
 
-    /**
-     * Brainstorm blog ideas
-     */
-    public function brainstorm(string $prompt, ?string $seasonalContext = null): array
-    {
-        $systemPrompt = $this->buildBrandVoicePrompt();
-        $systemPrompt .= "\nYou are helping brainstorm blog content ideas for Black White Denim.";
+Context: {$params['context']}
 
-        $userPrompt = $prompt . "\n\n";
-        
-        if ($seasonalContext) {
-            $userPrompt .= "Consider this seasonal context: {$seasonalContext}\n\n";
-        }
+Return JSON:
+{
+    "heading": "Section heading",
+    "content": "Section content (100-150 words)",
+    "cta_text": "Call to action button text",
+    "cta_url": "/relevant/url"
+}
 
-        $userPrompt .= "Provide 3-5 blog post ideas. For each idea, include:\n";
-        $userPrompt .= "- A catchy title\n";
-        $userPrompt .= "- A brief description (1-2 sentences)\n";
-        $userPrompt .= "- Suggested section topics\n\n";
+Return ONLY valid JSON.
+PROMPT;
 
-        $userPrompt .= "Return ONLY valid JSON array:\n";
-        $userPrompt .= '[{"title": "Blog title", "description": "Brief description", "sections": ["Section 1", "Section 2"]}]';
-
-        $response = $this->makeRequest($systemPrompt, $userPrompt);
-        
-        if (isset($response['content'][0]['text'])) {
-            $text = preg_replace('/```json\s*/', '', $response['content'][0]['text']);
-            $text = preg_replace('/```\s*/', '', $text);
-            $parsed = json_decode(trim($text), true);
-            if ($parsed) {
-                return ['success' => true, 'data' => $parsed];
-            }
-        }
-        
-        return ['success' => false, 'error' => 'Failed to parse AI response'];
-    }
-
-    /**
-     * Suggest products for a topic
-     */
-    public function suggestProducts(string $topic, array $availableProducts): array
-    {
-        $systemPrompt = "You are a fashion merchandising expert for Black White Denim, a women's designer boutique. ";
-        $systemPrompt .= "Given a blog topic, suggest the most relevant products to feature.";
-
-        // Build product list
-        $productList = [];
-        foreach ($availableProducts as $p) {
-            $categories = is_string($p['category_names']) ? json_decode($p['category_names'], true) : ($p['category_names'] ?? []);
-            $productList[] = sprintf(
-                "ID:%d | %s | Brand:%s | Categories:%s",
-                $p['wc_product_id'],
-                $p['title'],
-                $p['brand_name'] ?? 'Unknown',
-                implode(', ', $categories ?: [])
-            );
-        }
-
-        $userPrompt = "Blog topic: {$topic}\n\n";
-        $userPrompt .= "Available products:\n" . implode("\n", array_slice($productList, 0, 100));
-        $userPrompt .= "\n\nSelect 5-10 products that best match this topic.";
-        $userPrompt .= "\nReturn ONLY a JSON array of product IDs: [123, 456, 789]";
-
-        $response = $this->makeRequest($systemPrompt, $userPrompt);
-        
-        if (isset($response['content'][0]['text'])) {
-            $text = preg_replace('/```json\s*/', '', $response['content'][0]['text']);
-            $text = preg_replace('/```\s*/', '', $text);
-            $parsed = json_decode(trim($text), true);
-            if (is_array($parsed)) {
-                return ['success' => true, 'data' => $parsed];
-            }
-        }
-        
-        return ['success' => false, 'error' => 'Failed to parse AI response'];
+        $response = $this->callApi($systemPrompt, $userPrompt);
+        return $this->parseJsonResponse($response);
     }
 
     /**
      * Generate meta description
      */
-    public function generateMetaDescription(string $title, string $content): array
+    public function generateMetaDescription(string $title, string $content): string
     {
-        $systemPrompt = "You are an SEO expert. Generate compelling meta descriptions for blog posts.";
-
-        $userPrompt = "Blog title: {$title}\n\n";
-        $userPrompt .= "Content summary: " . substr($content, 0, 500) . "...\n\n";
-        $userPrompt .= "Write a meta description that:\n";
-        $userPrompt .= "- Is exactly 150-155 characters\n";
-        $userPrompt .= "- Includes a call to action\n";
-        $userPrompt .= "- Is compelling and click-worthy\n";
-        $userPrompt .= "- Uses British English\n\n";
-        $userPrompt .= "Return ONLY the meta description text, nothing else.";
-
-        $response = $this->makeRequest($systemPrompt, $userPrompt);
+        $systemPrompt = "You are an SEO specialist. Generate concise, compelling meta descriptions.";
         
-        if (isset($response['content'][0]['text'])) {
-            $text = trim($response['content'][0]['text']);
-            // Ensure it's within limits
-            if (strlen($text) > 160) {
-                $text = substr($text, 0, 155) . '...';
-            }
-            return ['success' => true, 'data' => $text];
-        }
-        
-        return ['success' => false, 'error' => 'Failed to generate meta description'];
+        $userPrompt = <<<PROMPT
+Generate a meta description for this blog post:
+Title: {$title}
+Content preview: {$content}
+
+Requirements:
+- Exactly 150-155 characters
+- Include relevant keywords naturally
+- Compelling and click-worthy
+- British English
+
+Return ONLY the meta description text, nothing else.
+PROMPT;
+
+        return trim($this->callApi($systemPrompt, $userPrompt));
     }
 
     /**
-     * Improve existing content
+     * Suggest products for a blog post
      */
-    public function improveContent(string $content, string $instruction): array
+    public function suggestProducts(array $params): array
     {
-        $systemPrompt = $this->buildBrandVoicePrompt();
-
-        $userPrompt = "Here is existing content:\n\n{$content}\n\n";
-        $userPrompt .= "Instruction: {$instruction}\n\n";
-        $userPrompt .= "Rewrite the content following the instruction while maintaining the brand voice.\n";
-        $userPrompt .= "Return ONLY the improved content, no explanations.";
-
-        $response = $this->makeRequest($systemPrompt, $userPrompt);
+        $topic = $params['topic'] ?? '';
+        $contentType = $params['content_type'] ?? 'general';
         
-        if (isset($response['content'][0]['text'])) {
-            return ['success' => true, 'data' => trim($response['content'][0]['text'])];
+        // Get available products
+        $products = Database::query(
+            "SELECT wc_product_id, title, brand_name, price, category_names 
+             FROM wp_products 
+             WHERE stock_status = 'instock' 
+             ORDER BY RAND() 
+             LIMIT 50"
+        );
+        
+        $productList = '';
+        foreach ($products as $p) {
+            $productList .= "ID:{$p['wc_product_id']} - {$p['title']} by {$p['brand_name']} (£{$p['price']})\n";
         }
         
-        return ['success' => false, 'error' => 'Failed to improve content'];
+        $systemPrompt = "You are a fashion merchandiser selecting products for blog posts.";
+        
+        $userPrompt = <<<PROMPT
+Select the 8 most relevant products for a blog post about: {$topic}
+Content type: {$contentType}
+
+Available products:
+{$productList}
+
+Return a JSON array of product IDs that best fit the topic:
+["12345", "67890", ...]
+
+Consider:
+- Relevance to the topic
+- Mix of price points
+- Variety of brands
+- Visual appeal
+
+Return ONLY the JSON array.
+PROMPT;
+
+        $response = $this->callApi($systemPrompt, $userPrompt);
+        $productIds = $this->parseJsonResponse($response);
+        
+        if (!is_array($productIds)) {
+            return [];
+        }
+        
+        // Get full product details
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+        return Database::query(
+            "SELECT * FROM wp_products WHERE wc_product_id IN ({$placeholders})",
+            $productIds
+        );
     }
 
     /**
-     * General chat for assistant panel
+     * Brainstorm content ideas
      */
-    public function chat(string $message, array $context = []): array
+    public function brainstorm(array $params): array
     {
-        $systemPrompt = $this->buildBrandVoicePrompt();
-        $systemPrompt .= "\nYou are Claude, an AI assistant helping with the Black White Denim blog platform. ";
-        $systemPrompt .= "You can help with:\n";
-        $systemPrompt .= "- Brainstorming blog ideas\n";
-        $systemPrompt .= "- Writing and improving content\n";
-        $systemPrompt .= "- Suggesting products to feature\n";
-        $systemPrompt .= "- SEO advice\n";
-        $systemPrompt .= "- General questions about the platform\n";
-        $systemPrompt .= "\nBe helpful, concise, and maintain the brand voice in any content suggestions.";
+        $topic = $params['topic'] ?? 'fashion content';
+        $count = $params['count'] ?? 5;
+        $brandVoice = $this->getBrandVoice();
+        
+        $systemPrompt = "You are a creative content strategist for a UK premium fashion retailer.";
+        
+        $userPrompt = <<<PROMPT
+Generate {$count} blog post ideas related to: {$topic}
 
-        $userPrompt = $message;
-        
-        if (!empty($context)) {
-            $userPrompt .= "\n\nContext: " . json_encode($context);
-        }
+Brand context: {$brandVoice}
 
-        $response = $this->makeRequest($systemPrompt, $userPrompt);
-        
-        if (isset($response['content'][0]['text'])) {
-            return ['success' => true, 'data' => $response['content'][0]['text']];
+For each idea, provide:
+{
+    "ideas": [
+        {
+            "title": "Suggested blog title",
+            "description": "Brief description of the post (1-2 sentences)",
+            "content_type": "gift-guide|style-guide|trend-report|brand-spotlight|new-arrivals|curated-edit",
+            "target_audience": "Who this post is for",
+            "estimated_products": 5-10
         }
-        
-        return ['success' => false, 'error' => 'Failed to get response'];
+    ]
+}
+
+Return ONLY valid JSON.
+PROMPT;
+
+        $response = $this->callApi($systemPrompt, $userPrompt);
+        return $this->parseJsonResponse($response);
     }
 
     /**
-     * Make request to Claude API
+     * Chat with Claude
      */
-    private function makeRequest(string $system, string $user): array
+    public function chat(string $message, array $context = []): string
     {
-        $ch = curl_init('https://api.anthropic.com/v1/messages');
+        $brandVoice = $this->getBrandVoice();
+        
+        $systemPrompt = <<<PROMPT
+You are a helpful AI assistant for Black White Denim's blog platform. You help with:
+- Content ideas and strategy
+- Writing and editing blog posts
+- Product selection and merchandising
+- SEO optimization
 
+Brand context: {$brandVoice}
+
+Be helpful, creative, and knowledgeable about fashion and content marketing.
+PROMPT;
+
+        return $this->callApi($systemPrompt, $message);
+    }
+
+    /**
+     * Make API call to Claude
+     */
+    private function callApi(string $systemPrompt, string $userPrompt): string
+    {
         $payload = [
             'model' => $this->model,
             'max_tokens' => $this->maxTokens,
-            'system' => $system,
+            'system' => $systemPrompt,
             'messages' => [
-                ['role' => 'user', 'content' => $user]
+                ['role' => 'user', 'content' => $userPrompt]
             ]
         ];
 
+        $ch = curl_init($this->baseUrl);
         curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($payload),
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
                 'x-api-key: ' . $this->apiKey,
                 'anthropic-version: 2023-06-01'
             ],
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 60
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_TIMEOUT => 120
         ]);
 
         $response = curl_exec($ch);
@@ -347,15 +291,61 @@ class ClaudeService
         curl_close($ch);
 
         if ($error) {
-            error_log("Claude API curl error: " . $error);
-            return ['error' => $error];
+            throw new \Exception("Claude API error: {$error}");
         }
 
         if ($httpCode !== 200) {
-            error_log("Claude API HTTP error {$httpCode}: " . $response);
-            return ['error' => "HTTP {$httpCode}", 'response' => $response];
+            $decoded = json_decode($response, true);
+            $message = $decoded['error']['message'] ?? "HTTP {$httpCode}";
+            throw new \Exception("Claude API error: {$message}");
         }
 
-        return json_decode($response, true) ?? ['error' => 'Invalid JSON response'];
+        $decoded = json_decode($response, true);
+        return $decoded['content'][0]['text'] ?? '';
+    }
+
+    /**
+     * Parse JSON from Claude response
+     */
+    private function parseJsonResponse(string $response): array
+    {
+        // Try to extract JSON from response
+        $response = trim($response);
+        
+        // Remove markdown code blocks if present
+        if (preg_match('/```(?:json)?\s*([\s\S]*?)\s*```/', $response, $matches)) {
+            $response = $matches[1];
+        }
+        
+        $decoded = json_decode($response, true);
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log("Failed to parse Claude JSON response: " . json_last_error_msg());
+            error_log("Response was: " . substr($response, 0, 500));
+            return [];
+        }
+        
+        return $decoded;
+    }
+
+    /**
+     * Get brand voice from database
+     */
+    private function getBrandVoice(): string
+    {
+        $voice = Database::query(
+            "SELECT attribute, description FROM brand_voice WHERE is_active = 1"
+        );
+        
+        if (empty($voice)) {
+            return "Professional, fashion-forward UK retailer targeting style-conscious customers.";
+        }
+        
+        $voiceText = "Brand voice attributes:\n";
+        foreach ($voice as $v) {
+            $voiceText .= "- {$v['attribute']}: {$v['description']}\n";
+        }
+        
+        return $voiceText;
     }
 }

@@ -310,6 +310,38 @@ function routeApi(string $path, string $method, array $config): void
             (new \App\Controllers\StatsController($config))->activity($_GET);
             break;
             
+        // Content Engine (Auto-pilot)
+        case $path === '/content/templates' && $method === 'GET':
+            (new \App\Controllers\ContentEngine($config))->getTemplates();
+            break;
+        case $path === '/content/templates' && $method === 'POST':
+            (new \App\Controllers\ContentEngine($config))->createTemplate($input);
+            break;
+        case $path === '/content/scheduled' && $method === 'GET':
+            (new \App\Controllers\ContentEngine($config))->getScheduledContent();
+            break;
+        case $path === '/content/calendar/generate' && $method === 'POST':
+            (new \App\Controllers\ContentEngine($config))->generateCalendar($input);
+            break;
+        case $path === '/content/generate-pending' && $method === 'POST':
+            (new \App\Controllers\ContentEngine($config))->generatePendingContent();
+            break;
+        case $path === '/content/review-queue' && $method === 'GET':
+            (new \App\Controllers\ContentEngine($config))->getReviewQueue();
+            break;
+        case preg_match('#^/content/approve/(\d+)$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\ContentEngine($config))->approveContent((int)$m[1]);
+            break;
+        case $path === '/content/stats' && $method === 'GET':
+            (new \App\Controllers\ContentEngine($config))->getStats();
+            break;
+        case $path === '/content/seed-events' && $method === 'POST':
+            (new \App\Controllers\ContentEngine($config))->seedSeasonalEvents();
+            break;
+        case $path === '/content/seed-templates' && $method === 'POST':
+            (new \App\Controllers\ContentEngine($config))->seedContentTemplates();
+            break;
+            
         default:
             http_response_code(404);
             echo json_encode([
@@ -381,6 +413,7 @@ function routeWeb(string $path, string $method, array $config): void
         case '/roadmap':
         case '/brainstorm':
         case '/products':
+        case '/autopilot':
         case '/settings':
         case '/settings/brand-voice':
         case '/settings/sync':
