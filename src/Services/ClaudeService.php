@@ -141,22 +141,28 @@ Please generate a complete blog post with the following JSON structure:
     "outro": "Closing paragraph with call to action (50-100 words)"
 }
 
-IMPORTANT RULES:
-1. ONLY use brand_id and category_id combinations from the VALID COMBINATIONS list above
-2. If using a brand-only carousel (no category filter), set carousel_category_id to null
-3. Never invent combinations - if a brand+category isn't in the list, don't use it
-4. CTA URLs MUST use format /brand/brand-slug/ (e.g. /brand/anine-bing/, /brand/citizens-of-humanity/)
-5. For category links use /product-category/category-slug/ (e.g. /product-category/dresses/)
+CRITICAL RULES FOR SECTIONS AND CAROUSELS:
 
-CAROUSEL RULES - VERY IMPORTANT:
-- NOT every section needs a carousel - only add carousels where they add value
-- Maximum 2-3 carousels per post total
-- NEVER repeat the same brand+category combination - each carousel must be unique
-- If a post focuses on one brand with few categories, use just 1-2 carousels strategically placed
-- Set carousel_brand_id and carousel_category_id to null for sections that don't need a carousel
-- Place carousels after sections that specifically discuss those products
+1. NUMBER OF SECTIONS: Create only as many sections as the topic naturally requires. If discussing one brand with 2 product categories, you only need 2 sections. Don't pad with extra sections.
 
-Generate 3-5 sections. Return ONLY valid JSON, no markdown or explanation.
+2. CAROUSEL UNIQUENESS: Every carousel MUST show different products. Never create two sections with the same brand+category combination. If you can't show something different, DON'T add a carousel to that section.
+
+3. SECTION WITHOUT CAROUSEL: It's perfectly fine for a section to have NO carousel (set both carousel_brand_id and carousel_category_id to null). Use this when:
+   - The section is introductory or transitional
+   - You've already used all relevant brand/category combos
+   - The section discusses styling tips or general advice
+
+4. MATCHING CONTENT TO CAROUSELS: Only add a carousel if that section specifically discusses those products. Don't force carousels into every section.
+
+5. CTA URLs: Use /brand/brand-slug/ for brand pages, /product-category/category-slug/ for categories.
+
+EXAMPLE: If writing about "IZIPIZI Reading Glasses and Sunglasses":
+- Section 1: Reading glasses content → carousel: IZIPIZI + Reading Glasses
+- Section 2: Sunglasses content → carousel: IZIPIZI + Sunglasses  
+- Section 3 (if needed): Styling tips → NO carousel (null values)
+- WRONG: 5 sections all trying to show IZIPIZI products with repeated carousels
+
+Return ONLY valid JSON, no markdown or explanation.
 PROMPT;
 
         $response = $this->callApi($systemPrompt, $userPrompt);
@@ -167,8 +173,6 @@ PROMPT;
         // Validate carousel combinations and remove duplicates
         if (!empty($content['sections'])) {
             $usedCombos = []; // Track used brand+category combinations
-            $carouselCount = 0;
-            $maxCarousels = 3;
             
             foreach ($content['sections'] as &$section) {
                 $brandId = $section['carousel_brand_id'] ?? null;
@@ -193,27 +197,18 @@ PROMPT;
                         }
                     }
                     
-                    // Check for duplicate combo
+                    // Check for duplicate combo - this is critical
                     $comboKey = $brandId . '-' . ($categoryId ?? 'all');
                     if (in_array($comboKey, $usedCombos)) {
-                        // Duplicate - clear this carousel
+                        // Duplicate carousel - remove it, section can stay without carousel
                         $section['carousel_brand_id'] = null;
                         $section['carousel_category_id'] = null;
-                        error_log("Carousel validation: Removed duplicate combo {$comboKey}");
-                        continue;
-                    }
-                    
-                    // Check max carousel limit
-                    if ($carouselCount >= $maxCarousels) {
-                        $section['carousel_brand_id'] = null;
-                        $section['carousel_category_id'] = null;
-                        error_log("Carousel validation: Max carousels reached, removing extra");
+                        error_log("Carousel validation: Removed duplicate combo {$comboKey} - section kept without carousel");
                         continue;
                     }
                     
                     // Valid unique carousel - track it
                     $usedCombos[] = $comboKey;
-                    $carouselCount++;
                 }
             }
         }

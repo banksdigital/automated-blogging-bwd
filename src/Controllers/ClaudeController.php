@@ -348,7 +348,12 @@ class ClaudeController
             error_log("Failed to log activity: " . $e->getMessage());
         }
     }
-        /**
+/**
+ * Add this method to your existing ClaudeController.php file
+ * Location: src/Controllers/ClaudeController.php
+ */
+
+    /**
      * AI Assistant for refining a specific post
      */
     public function postAssistant(array $input): void
