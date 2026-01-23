@@ -473,4 +473,113 @@ public function syncProducts(): void
             error_log("Failed to log activity: " . $e->getMessage());
         }
     }
+    
+    /**
+     * Publish a post to WordPress
+     */
+    public function publishToWordPress(int $postId, array $input): void
+    {
+        try {
+            // Get the post from our database
+            $post = Database::queryOne(
+                "SELECT p.*, c.wp_category_id, a.wp_user_id as author_id
+                 FROM posts p
+                 LEFT JOIN wp_categories c ON p.wp_category_id = c.id
+                 LEFT JOIN wp_authors a ON p.wp_author_id = a.id
+                 WHERE p.id = ?",
+                [$postId]
+            );
+            
+            if (!$post) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Post not found']]);
+                return;
+            }
+            
+            // Get sections
+            $sections = Database::query(
+                "SELECT * FROM post_sections WHERE post_id = ? ORDER BY section_index",
+                [$postId]
+            );
+            
+            // Build Visual Composer content
+            $service = new WordPressService($this->config);
+            $vcContent = $service->buildVisualComposerContent($post, $sections);
+            
+            // Prepare WordPress post data
+            $wpData = [
+                'title' => $post['title'],
+                'content' => $vcContent,
+                'status' => $input['wp_status'] ?? 'draft', // draft, publish, or future
+                'meta_description' => $post['meta_description'] ?? '',
+            ];
+            
+            // Add category if set
+            if (!empty($post['wp_category_id'])) {
+                $wpData['categories'] = [$post['wp_category_id']];
+            }
+            
+            // Add author if set
+            if (!empty($post['author_id'])) {
+                $wpData['author'] = $post['author_id'];
+            }
+            
+            // Add scheduled date if provided
+            if (!empty($input['scheduled_date'])) {
+                $wpData['date'] = $input['scheduled_date'];
+            } elseif (!empty($post['scheduled_date'])) {
+                $wpData['date'] = $post['scheduled_date'];
+            }
+            
+            // Check if already published (update) or new (create)
+            if (!empty($post['wp_post_id'])) {
+                // Update existing WordPress post
+                $result = $service->updatePost($post['wp_post_id'], $wpData);
+                $wpPostId = $post['wp_post_id'];
+            } else {
+                // Create new WordPress post
+                $result = $service->createPost($wpData);
+                $wpPostId = $result['id'] ?? null;
+            }
+            
+            if (!$wpPostId) {
+                throw new \Exception('Failed to create/update WordPress post');
+            }
+            
+            // Update our database
+            Database::execute(
+                "UPDATE posts SET wp_post_id = ?, status = 'published', published_at = NOW() WHERE id = ?",
+                [$wpPostId, $postId]
+            );
+            
+            $this->logActivity('publish_wordpress', 'post', $postId, [
+                'wp_post_id' => $wpPostId,
+                'status' => $wpData['status']
+            ]);
+            
+            // Build the WordPress edit URL
+            $siteUrl = rtrim($this->config['wordpress']['site_url'] ?? $this->config['wordpress']['api_url'], '/');
+            $siteUrl = preg_replace('/\/wp-json$/', '', $siteUrl);
+            $editUrl = $siteUrl . '/wp-admin/post.php?post=' . $wpPostId . '&action=edit';
+            $viewUrl = $result['link'] ?? $siteUrl . '/?p=' . $wpPostId;
+            
+            echo json_encode([
+                'success' => true,
+                'data' => [
+                    'wp_post_id' => $wpPostId,
+                    'edit_url' => $editUrl,
+                    'view_url' => $viewUrl,
+                    'message' => 'Post published to WordPress successfully'
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            error_log("WordPress publish error: " . $e->getMessage());
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
+    }
 }

@@ -401,14 +401,23 @@ const App = {
                 post = await this.api(`/posts/${id}`);
             }
             
+            const isExistingPost = !!id;
+            const isPublished = post.wp_post_id;
+            
             main.innerHTML = `
                 <div class="page-header">
                     <div>
                         <h1 class="page-title">${id ? 'Edit Post' : 'New Post'}</h1>
+                        ${isPublished ? `<p class="page-subtitle" style="color:var(--status-published);">✓ Published to WordPress (ID: ${post.wp_post_id})</p>` : ''}
                     </div>
                     <div style="display: flex; gap: 12px;">
                         <button class="btn btn-secondary" onclick="App.navigate('/posts')">Cancel</button>
                         <button class="btn btn-primary" onclick="App.savePost(${id || 'null'})">Save Post</button>
+                        ${isExistingPost ? `
+                            <button class="btn" style="background:var(--status-published);color:white;" onclick="App.publishToWordPress(${id})">
+                                ${isPublished ? '↻ Update in WordPress' : '🚀 Publish to WordPress'}
+                            </button>
+                        ` : ''}
                     </div>
                 </div>
                 
@@ -629,6 +638,100 @@ const App = {
         } catch (error) {
             this.toast(error.message, 'error');
         }
+    },
+    
+    async publishToWordPress(postId) {
+        // Show confirmation dialog
+        const status = await this.showPublishDialog();
+        if (!status) return;
+        
+        this.toast('Publishing to WordPress...');
+        
+        try {
+            const result = await this.api(`/wordpress/publish/${postId}`, {
+                method: 'POST',
+                body: { wp_status: status }
+            });
+            
+            this.toast('Published to WordPress!', 'success');
+            
+            // Show success modal with links
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal" style="max-width:450px;">
+                    <div class="modal-header">
+                        <h3 class="modal-title">🎉 Published Successfully!</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p style="margin-bottom:16px;">Your post has been sent to WordPress.</p>
+                        <div style="display:flex;flex-direction:column;gap:12px;">
+                            <a href="${result.edit_url}" target="_blank" class="btn btn-secondary" style="text-align:center;">
+                                ✏️ Edit in WordPress
+                            </a>
+                            <a href="${result.view_url}" target="_blank" class="btn btn-primary" style="text-align:center;">
+                                👁️ View Post
+                            </a>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            // Refresh the page
+            this.loadPostEditor(postId);
+            
+        } catch (error) {
+            this.toast(error.message || 'Failed to publish', 'error');
+        }
+    },
+    
+    showPublishDialog() {
+        return new Promise((resolve) => {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal" style="max-width:400px;">
+                    <div class="modal-header">
+                        <h3 class="modal-title">Publish to WordPress</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p style="margin-bottom:16px;">How would you like to publish this post?</p>
+                        <div style="display:flex;flex-direction:column;gap:12px;">
+                            <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').dataset.result='draft';this.closest('.modal-overlay').remove();">
+                                📝 Save as Draft
+                            </button>
+                            <button class="btn btn-primary" onclick="this.closest('.modal-overlay').dataset.result='publish';this.closest('.modal-overlay').remove();">
+                                🚀 Publish Now
+                            </button>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn" onclick="this.closest('.modal-overlay').remove();">Cancel</button>
+                    </div>
+                </div>
+            `;
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                    resolve(null);
+                }
+            });
+            
+            const observer = new MutationObserver(() => {
+                if (!document.body.contains(modal)) {
+                    resolve(modal.dataset.result || null);
+                    observer.disconnect();
+                }
+            });
+            observer.observe(document.body, { childList: true });
+            
+            document.body.appendChild(modal);
+        });
     },
 
     // ==================== PRODUCTS ====================

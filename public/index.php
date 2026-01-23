@@ -215,6 +215,9 @@ function routeApi(string $path, string $method, array $config): void
         case $path === '/wordpress/test' && $method === 'POST':
             (new \App\Controllers\WordPressController($config))->testConnection($input);
             break;
+        case preg_match('#^/wordpress/publish/(\d+)$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\WordPressController($config))->publishToWordPress((int)$m[1], $input);
+            break;
             
         // Products
         case $path === '/products' && $method === 'GET':
