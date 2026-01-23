@@ -74,16 +74,26 @@ class WordPressService
             'title' => $data['title'],
             'content' => $data['content'],
             'status' => $data['status'] ?? 'draft',
-            'categories' => $data['categories'] ?? [],
-            'author' => $data['author'] ?? null,
         ];
         
+        // Only add categories if not empty
+        if (!empty($data['categories'])) {
+            $payload['categories'] = $data['categories'];
+        }
+        
+        // Only add author if set
+        if (!empty($data['author'])) {
+            $payload['author'] = $data['author'];
+        }
+        
+        // Add Yoast meta description if provided
         if (!empty($data['meta_description'])) {
             $payload['meta'] = [
                 '_yoast_wpseo_metadesc' => $data['meta_description']
             ];
         }
         
+        // Add date if provided (must be ISO 8601 format)
         if (!empty($data['date'])) {
             $payload['date'] = $data['date'];
             if ($payload['status'] === 'publish') {

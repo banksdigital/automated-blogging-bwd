@@ -511,7 +511,6 @@ public function syncProducts(): void
                 'title' => $post['title'],
                 'content' => $vcContent,
                 'status' => $input['wp_status'] ?? 'draft', // draft, publish, or future
-                'meta_description' => $post['meta_description'] ?? '',
             ];
             
             // Add category if set
@@ -524,12 +523,8 @@ public function syncProducts(): void
                 $wpData['author'] = $post['author_id'];
             }
             
-            // Add scheduled date if provided
-            if (!empty($input['scheduled_date'])) {
-                $wpData['date'] = $input['scheduled_date'];
-            } elseif (!empty($post['scheduled_date'])) {
-                $wpData['date'] = $post['scheduled_date'];
-            }
+            // NOTE: Skipping scheduled date for now - will add later if needed
+            // WordPress date scheduling requires specific format and future status
             
             // Check if already published (update) or new (create)
             if (!empty($post['wp_post_id'])) {
