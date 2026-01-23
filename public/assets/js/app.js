@@ -658,23 +658,24 @@ const App = {
             // Show success modal with links
             const modal = document.createElement('div');
             modal.className = 'modal-overlay';
+            modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
             modal.innerHTML = `
-                <div class="modal" style="max-width:450px;">
-                    <div class="modal-header">
-                        <h3 class="modal-title">🎉 Published Successfully!</h3>
+                <div style="background:white;border-radius:8px;max-width:450px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.15);">
+                    <div style="padding:20px 24px;border-bottom:1px solid #e5e5e5;">
+                        <h3 style="margin:0;font-size:18px;">🎉 Published Successfully!</h3>
                     </div>
-                    <div class="modal-body">
-                        <p style="margin-bottom:16px;">Your post has been sent to WordPress.</p>
+                    <div style="padding:24px;">
+                        <p style="margin:0 0 16px 0;">Your post has been sent to WordPress.</p>
                         <div style="display:flex;flex-direction:column;gap:12px;">
-                            <a href="${result.edit_url}" target="_blank" class="btn btn-secondary" style="text-align:center;">
+                            <a href="${result.edit_url}" target="_blank" class="btn btn-secondary" style="text-align:center;text-decoration:none;">
                                 ✏️ Edit in WordPress
                             </a>
-                            <a href="${result.view_url}" target="_blank" class="btn btn-primary" style="text-align:center;">
+                            <a href="${result.view_url}" target="_blank" class="btn btn-primary" style="text-align:center;text-decoration:none;">
                                 👁️ View Post
                             </a>
                         </div>
                     </div>
-                    <div class="modal-footer">
+                    <div style="padding:16px 24px;border-top:1px solid #e5e5e5;text-align:right;">
                         <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button>
                     </div>
                 </div>
@@ -693,13 +694,14 @@ const App = {
         return new Promise((resolve) => {
             const modal = document.createElement('div');
             modal.className = 'modal-overlay';
+            modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
             modal.innerHTML = `
-                <div class="modal" style="max-width:400px;">
-                    <div class="modal-header">
-                        <h3 class="modal-title">Publish to WordPress</h3>
+                <div style="background:white;border-radius:8px;max-width:400px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.15);">
+                    <div style="padding:20px 24px;border-bottom:1px solid #e5e5e5;">
+                        <h3 style="margin:0;font-size:18px;">Publish to WordPress</h3>
                     </div>
-                    <div class="modal-body">
-                        <p style="margin-bottom:16px;">How would you like to publish this post?</p>
+                    <div style="padding:24px;">
+                        <p style="margin:0 0 16px 0;">How would you like to publish this post?</p>
                         <div style="display:flex;flex-direction:column;gap:12px;">
                             <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').dataset.result='draft';this.closest('.modal-overlay').remove();">
                                 📝 Save as Draft
@@ -709,7 +711,7 @@ const App = {
                             </button>
                         </div>
                     </div>
-                    <div class="modal-footer">
+                    <div style="padding:16px 24px;border-top:1px solid #e5e5e5;text-align:right;">
                         <button class="btn" onclick="this.closest('.modal-overlay').remove();">Cancel</button>
                     </div>
                 </div>
