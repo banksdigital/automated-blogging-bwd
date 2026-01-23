@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Helpers\Database;
+use App\Controllers\WritingGuidelinesController;
 
 /**
  * Claude AI Service
@@ -28,6 +29,7 @@ class ClaudeService
     public function generateBlogPost(array $params): array
     {
         $brandVoice = $this->getBrandVoice();
+        $writingGuidelines = WritingGuidelinesController::getForPrompt();
         $products = $params['products'] ?? [];
         
         $productContext = '';
@@ -43,13 +45,14 @@ You are a content writer for Black White Denim, a UK-based premium fashion retai
 
 Brand Voice Guidelines:
 {$brandVoice}
+{$writingGuidelines}
 
 Writing Style:
 - Warm, knowledgeable, and inspiring
 - Fashion-forward but accessible
 - Never pushy or salesy
 - Use British English spelling
-- Write for a sophisticated audience who appreciates quality fashion
+- Write like a stylish friend giving advice, not a corporate copywriter
 
 Format Requirements:
 - Create engaging, SEO-friendly content

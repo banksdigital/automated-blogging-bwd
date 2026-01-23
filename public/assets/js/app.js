@@ -124,6 +124,8 @@ const App = {
             this.loadSettings();
         } else if (path === '/settings/brand-voice') {
             this.loadBrandVoice();
+        } else if (path === '/settings/writing-guidelines') {
+            this.loadWritingGuidelines();
         } else if (path === '/settings/sync') {
             this.loadSync();
         }
@@ -991,6 +993,14 @@ const App = {
                         <div style="font-size:13px;color:var(--text-secondary);">Configure AI writing style and tone</div>
                     </div>
                 </div>
+                
+                <div class="card" onclick="App.navigate('/settings/writing-guidelines')" style="cursor:pointer;">
+                    <div class="card-body" style="text-align:center;padding:40px;">
+                        <div style="font-size:32px;margin-bottom:12px;">🚫</div>
+                        <div style="font-weight:600;margin-bottom:4px;">Writing Guidelines</div>
+                        <div style="font-size:13px;color:var(--text-secondary);">Words and phrases AI should avoid</div>
+                    </div>
+                </div>
             </div>
         `;
     },
@@ -1273,6 +1283,136 @@ const App = {
             `;
         } catch (error) {
             main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
+        }
+    },
+
+    // ==================== WRITING GUIDELINES ====================
+    async loadWritingGuidelines() {
+        const main = document.getElementById('main-content');
+        main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        
+        try {
+            const guidelines = await this.api('/settings/writing-guidelines');
+            
+            main.innerHTML = `
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Writing Guidelines</h1>
+                        <p class="page-subtitle">Words, phrases, and style rules for AI content generation</p>
+                    </div>
+                    <button class="btn btn-primary" onclick="App.seedWritingGuidelines()">Seed Defaults</button>
+                </div>
+                
+                <!-- Avoid Words -->
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">🚫 Words to Avoid</span>
+                        <span style="font-size:12px;color:var(--text-secondary);">${guidelines.avoid_words?.length || 0} words</span>
+                    </div>
+                    <div class="card-body">
+                        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+                            ${(guidelines.avoid_words || []).map(g => `
+                                <span class="badge" style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;">
+                                    ${this.escapeHtml(g.value)}
+                                    <button onclick="App.deleteGuideline(${g.id})" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;">&times;</button>
+                                </span>
+                            `).join('')}
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <input type="text" id="new-avoid-word" class="form-input" placeholder="Add word to avoid..." style="flex:1;">
+                            <button class="btn btn-secondary" onclick="App.addGuideline('avoid_words', document.getElementById('new-avoid-word').value)">Add</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Avoid Phrases -->
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">🚫 Phrases to Avoid</span>
+                        <span style="font-size:12px;color:var(--text-secondary);">${guidelines.avoid_phrases?.length || 0} phrases</span>
+                    </div>
+                    <div class="card-body">
+                        <div style="margin-bottom:16px;">
+                            ${(guidelines.avoid_phrases || []).map(g => `
+                                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-default);">
+                                    <span style="font-size:13px;">"${this.escapeHtml(g.value)}"</span>
+                                    <button onclick="App.deleteGuideline(${g.id})" class="btn btn-sm" style="color:var(--text-muted);">&times;</button>
+                                </div>
+                            `).join('') || '<p style="color:var(--text-muted);font-size:13px;">No phrases added yet</p>'}
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <input type="text" id="new-avoid-phrase" class="form-input" placeholder="Add phrase to avoid..." style="flex:1;">
+                            <button class="btn btn-secondary" onclick="App.addGuideline('avoid_phrases', document.getElementById('new-avoid-phrase').value)">Add</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Style Rules -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">📝 Style Rules</span>
+                        <span style="font-size:12px;color:var(--text-secondary);">${guidelines.style_rules?.length || 0} rules</span>
+                    </div>
+                    <div class="card-body">
+                        <div style="margin-bottom:16px;">
+                            ${(guidelines.style_rules || []).map(g => `
+                                <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border-default);">
+                                    <span style="font-size:13px;">${this.escapeHtml(g.value)}</span>
+                                    <button onclick="App.deleteGuideline(${g.id})" class="btn btn-sm" style="color:var(--text-muted);">&times;</button>
+                                </div>
+                            `).join('') || '<p style="color:var(--text-muted);font-size:13px;">No style rules added yet</p>'}
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <input type="text" id="new-style-rule" class="form-input" placeholder="Add style rule..." style="flex:1;">
+                            <button class="btn btn-secondary" onclick="App.addGuideline('style_rules', document.getElementById('new-style-rule').value)">Add</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Enter key to add
+            ['new-avoid-word', 'new-avoid-phrase', 'new-style-rule'].forEach(id => {
+                document.getElementById(id)?.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        const category = id.includes('word') ? 'avoid_words' : id.includes('phrase') ? 'avoid_phrases' : 'style_rules';
+                        this.addGuideline(category, e.target.value);
+                    }
+                });
+            });
+            
+        } catch (error) {
+            main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
+        }
+    },
+    
+    async addGuideline(category, value) {
+        if (!value.trim()) return;
+        try {
+            await this.api('/settings/writing-guidelines', { method: 'POST', body: { category, value } });
+            this.toast('Guideline added');
+            this.loadWritingGuidelines();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async deleteGuideline(id) {
+        try {
+            await this.api(`/settings/writing-guidelines/${id}`, { method: 'DELETE' });
+            this.loadWritingGuidelines();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async seedWritingGuidelines() {
+        this.toast('Seeding default guidelines...');
+        try {
+            const result = await this.api('/settings/writing-guidelines/seed', { method: 'POST' });
+            this.toast(result.message || 'Guidelines seeded!', 'success');
+            this.loadWritingGuidelines();
+        } catch (error) {
+            this.toast(error.message, 'error');
         }
     },
 

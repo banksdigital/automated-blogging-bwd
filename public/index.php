@@ -342,6 +342,23 @@ function routeApi(string $path, string $method, array $config): void
             (new \App\Controllers\ContentEngine($config))->seedContentTemplates();
             break;
             
+        // Writing Guidelines
+        case $path === '/settings/writing-guidelines' && $method === 'GET':
+            (new \App\Controllers\WritingGuidelinesController($config))->index();
+            break;
+        case $path === '/settings/writing-guidelines' && $method === 'POST':
+            (new \App\Controllers\WritingGuidelinesController($config))->store($input);
+            break;
+        case $path === '/settings/writing-guidelines/bulk' && $method === 'POST':
+            (new \App\Controllers\WritingGuidelinesController($config))->bulkStore($input);
+            break;
+        case preg_match('#^/settings/writing-guidelines/(\d+)$#', $path, $m) && $method === 'DELETE':
+            (new \App\Controllers\WritingGuidelinesController($config))->delete((int)$m[1]);
+            break;
+        case $path === '/settings/writing-guidelines/seed' && $method === 'POST':
+            (new \App\Controllers\WritingGuidelinesController($config))->seedDefaults();
+            break;
+            
         default:
             http_response_code(404);
             echo json_encode([
@@ -416,6 +433,7 @@ function routeWeb(string $path, string $method, array $config): void
         case '/autopilot':
         case '/settings':
         case '/settings/brand-voice':
+        case '/settings/writing-guidelines':
         case '/settings/sync':
             // All dashboard routes use the same SPA template
             renderTemplate('dashboard', $templateData);
