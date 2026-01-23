@@ -37,14 +37,16 @@ class ClaudeService
             "SELECT 
                 b.wp_term_id as brand_id,
                 b.name as brand_name,
+                b.slug as brand_slug,
                 pc.wp_term_id as category_id,
                 pc.name as category_name,
+                pc.slug as category_slug,
                 COUNT(*) as product_count
              FROM wp_products p
              JOIN wp_brands b ON p.brand_id = b.wp_term_id
              JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
              WHERE p.stock_status = 'instock'
-             GROUP BY b.wp_term_id, b.name, pc.wp_term_id, pc.name
+             GROUP BY b.wp_term_id, b.name, b.slug, pc.wp_term_id, pc.name, pc.slug
              HAVING product_count >= 3
              ORDER BY b.name, pc.name
              LIMIT 100"
@@ -55,11 +57,12 @@ class ClaudeService
             "SELECT 
                 b.wp_term_id as brand_id,
                 b.name as brand_name,
+                b.slug as brand_slug,
                 COUNT(*) as product_count
              FROM wp_products p
              JOIN wp_brands b ON p.brand_id = b.wp_term_id
              WHERE p.stock_status = 'instock'
-             GROUP BY b.wp_term_id, b.name
+             GROUP BY b.wp_term_id, b.name, b.slug
              HAVING product_count >= 5
              ORDER BY product_count DESC
              LIMIT 50"
@@ -68,17 +71,18 @@ class ClaudeService
         $comboList = '';
         if (!empty($validCombos)) {
             $comboList = "\n\nVALID BRAND + CATEGORY COMBINATIONS (these have actual products in stock):\n";
-            $comboList .= "Format: Brand Name (brand_id) + Category Name (category_id) - X products\n";
+            $comboList .= "Format: Brand Name (brand_id, slug) + Category Name (category_id, slug) - X products\n";
             foreach ($validCombos as $c) {
-                $comboList .= "- {$c['brand_name']} ({$c['brand_id']}) + {$c['category_name']} ({$c['category_id']}) - {$c['product_count']} products\n";
+                $comboList .= "- {$c['brand_name']} (ID:{$c['brand_id']}, slug:{$c['brand_slug']}) + {$c['category_name']} (ID:{$c['category_id']}, slug:{$c['category_slug']}) - {$c['product_count']} products\n";
             }
         }
         
         $brandOnlyList = '';
         if (!empty($brandsOnly)) {
             $brandOnlyList = "\n\nBRANDS FOR BRAND-ONLY CAROUSELS (no category filter):\n";
+            $brandOnlyList .= "Use the slug for CTA URLs: /brand/slug/\n";
             foreach ($brandsOnly as $b) {
-                $brandOnlyList .= "- {$b['brand_name']} (brand_id: {$b['brand_id']}) - {$b['product_count']} products\n";
+                $brandOnlyList .= "- {$b['brand_name']} (ID:{$b['brand_id']}, slug:{$b['brand_slug']}) - {$b['product_count']} products\n";
             }
         }
         
@@ -129,7 +133,7 @@ Please generate a complete blog post with the following JSON structure:
             "heading": "Section heading",
             "content": "Section content (100-150 words) - mention the featured brand naturally",
             "cta_text": "Shop Now or similar",
-            "cta_url": "/shop/category",
+            "cta_url": "/brand/brand-slug/",
             "carousel_brand_id": 123,
             "carousel_category_id": 456
         }
@@ -137,11 +141,13 @@ Please generate a complete blog post with the following JSON structure:
     "outro": "Closing paragraph with call to action (50-100 words)"
 }
 
-IMPORTANT RULES FOR CAROUSELS:
+IMPORTANT RULES:
 1. ONLY use brand_id and category_id combinations from the VALID COMBINATIONS list above
 2. If using a brand-only carousel (no category filter), set carousel_category_id to null
 3. Never invent combinations - if a brand+category isn't in the list, don't use it
 4. Each section should feature a different brand for variety
+5. CTA URLs MUST use format /brand/brand-slug/ (e.g. /brand/anine-bing/, /brand/citizens-of-humanity/)
+6. For category links use /product-category/category-slug/ (e.g. /product-category/dresses/)
 
 Generate 3-5 sections. Return ONLY valid JSON, no markdown or explanation.
 PROMPT;
