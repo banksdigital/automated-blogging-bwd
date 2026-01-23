@@ -124,6 +124,95 @@ class WordPressController
         }
     }
 
+    /**
+     * Sync brands from WordPress (product brand taxonomy)
+     */
+    public function syncBrands(): void
+    {
+        try {
+            $service = new WordPressService($this->config);
+            $brands = $service->getAllBrands();
+
+            $synced = 0;
+            foreach ($brands as $brand) {
+                Database::execute(
+                    "INSERT INTO wp_brands (wp_term_id, name, slug, description, count, synced_at)
+                     VALUES (?, ?, ?, ?, ?, NOW())
+                     ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug), 
+                     description = VALUES(description), count = VALUES(count), synced_at = NOW()",
+                    [
+                        $brand['id'],
+                        html_entity_decode($brand['name']),
+                        $brand['slug'],
+                        $brand['description'] ?? null,
+                        $brand['count'] ?? 0
+                    ]
+                );
+                $synced++;
+            }
+
+            $this->logActivity('sync_brands', 'system', null, ['count' => $synced]);
+
+            echo json_encode([
+                'success' => true,
+                'data' => ['synced' => $synced, 'message' => "Synced {$synced} brands"]
+            ]);
+
+        } catch (\Exception $e) {
+            error_log("Brand sync error: " . $e->getMessage());
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['code' => 'SYNC_ERROR', 'message' => $e->getMessage()]
+            ]);
+        }
+    }
+
+    /**
+     * Sync product categories from WooCommerce
+     */
+    public function syncProductCategories(): void
+    {
+        try {
+            $service = new WordPressService($this->config);
+            $categories = $service->getAllProductCategories();
+
+            $synced = 0;
+            foreach ($categories as $cat) {
+                Database::execute(
+                    "INSERT INTO wp_product_categories (wp_term_id, parent_id, name, slug, description, count, synced_at)
+                     VALUES (?, ?, ?, ?, ?, ?, NOW())
+                     ON DUPLICATE KEY UPDATE parent_id = VALUES(parent_id), name = VALUES(name), 
+                     slug = VALUES(slug), description = VALUES(description), count = VALUES(count), synced_at = NOW()",
+                    [
+                        $cat['id'],
+                        $cat['parent'] ?? 0,
+                        html_entity_decode($cat['name']),
+                        $cat['slug'],
+                        $cat['description'] ?? null,
+                        $cat['count'] ?? 0
+                    ]
+                );
+                $synced++;
+            }
+
+            $this->logActivity('sync_product_categories', 'system', null, ['count' => $synced]);
+
+            echo json_encode([
+                'success' => true,
+                'data' => ['synced' => $synced, 'message' => "Synced {$synced} product categories"]
+            ]);
+
+        } catch (\Exception $e) {
+            error_log("Product category sync error: " . $e->getMessage());
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['code' => 'SYNC_ERROR', 'message' => $e->getMessage()]
+            ]);
+        }
+    }
+
 /**
  * Sync products from WooCommerce
  */
@@ -143,7 +232,8 @@ public function syncProducts(): void
             $brandProductIds = $service->getProductIdsByBrand($brand['id']);
             foreach ($brandProductIds as $productId) {
                 $productBrandMap[$productId] = [
-                    'name' => $brand['name'],
+                    'id' => $brand['id'],
+                    'name' => html_entity_decode($brand['name']),
                     'slug' => $brand['slug']
                 ];
             }
@@ -160,19 +250,23 @@ public function syncProducts(): void
             // Look up brand from pre-built map (no API call needed)
             $brandSlug = null;
             $brandName = null;
+            $brandId = null;
             
             if (isset($productBrandMap[$product['id']])) {
+                $brandId = $productBrandMap[$product['id']]['id'];
                 $brandName = $productBrandMap[$product['id']]['name'];
                 $brandSlug = $productBrandMap[$product['id']]['slug'];
             }
             
-            // Extract categories
+            // Extract categories with IDs
             $categorySlugs = [];
             $categoryNames = [];
+            $categoryIds = [];
             if (!empty($product['categories'])) {
                 foreach ($product['categories'] as $cat) {
                     $categorySlugs[] = $cat['slug'];
                     $categoryNames[] = $cat['name'];
+                    $categoryIds[] = $cat['id'];
                 }
             }
 
@@ -192,8 +286,8 @@ public function syncProducts(): void
 
             // Upsert product
             Database::execute(
-                "INSERT INTO wp_products (wc_product_id, title, description, short_description, price, regular_price, sale_price, stock_status, brand_slug, brand_name, category_slugs, category_names, tags, image_url, permalink, sku, synced_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                "INSERT INTO wp_products (wc_product_id, title, description, short_description, price, regular_price, sale_price, stock_status, brand_slug, brand_name, brand_id, category_slugs, category_names, tags, image_url, permalink, sku, synced_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                 ON DUPLICATE KEY UPDATE
                 title = VALUES(title),
                 description = VALUES(description),
@@ -204,6 +298,7 @@ public function syncProducts(): void
                 stock_status = VALUES(stock_status),
                 brand_slug = VALUES(brand_slug),
                 brand_name = VALUES(brand_name),
+                brand_id = VALUES(brand_id),
                 category_slugs = VALUES(category_slugs),
                 category_names = VALUES(category_names),
                 tags = VALUES(tags),
@@ -222,6 +317,7 @@ public function syncProducts(): void
                     $product['stock_status'] ?? 'instock',
                     $brandSlug,
                     $brandName,
+                    $brandId,
                     json_encode($categorySlugs),
                     json_encode($categoryNames),
                     json_encode($tags),
@@ -315,9 +411,11 @@ public function syncProducts(): void
     public function syncStatus(): void
     {
         $status = [
+            'brands' => $this->getLastSync('wp_brands'),
+            'product_categories' => $this->getLastSync('wp_product_categories'),
+            'products' => $this->getLastSync('wp_products'),
             'categories' => $this->getLastSync('wp_categories'),
             'authors' => $this->getLastSync('wp_authors'),
-            'products' => $this->getLastSync('wp_products'),
             'blocks' => $this->getLastSync('wp_page_blocks'),
         ];
 

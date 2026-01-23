@@ -395,6 +395,30 @@ public function getAllBrands(): array
 }
 
 /**
+ * Get all product categories from WooCommerce REST API
+ */
+public function getAllProductCategories(): array
+{
+    $categories = [];
+    $page = 1;
+    $perPage = 100;
+    
+    do {
+        $result = $this->wcRequest('GET', "/wc/v3/products/categories?per_page={$perPage}&page={$page}");
+        
+        if (empty($result)) {
+            break;
+        }
+        
+        $categories = array_merge($categories, $result);
+        $page++;
+        
+    } while (count($result) === $perPage);
+    
+    return $categories;
+}
+
+/**
  * Get brand for a specific product from WordPress REST API
  */
 public function getProductBrand(int $productId): ?array

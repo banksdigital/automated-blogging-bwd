@@ -94,13 +94,25 @@ class ProductController
 
     public function brands(): void
     {
+        // Get brands from wp_brands table with term IDs
         $brands = Database::query(
-            "SELECT brand_slug, brand_name, COUNT(*) as product_count 
-             FROM wp_products 
-             WHERE brand_slug IS NOT NULL AND stock_status = 'instock'
-             GROUP BY brand_slug, brand_name 
-             ORDER BY brand_name"
+            "SELECT b.wp_term_id, b.slug as brand_slug, b.name as brand_name, b.count as product_count
+             FROM wp_brands b
+             WHERE b.count > 0
+             ORDER BY b.name"
         );
         echo json_encode(['success' => true, 'data' => $brands]);
+    }
+    
+    public function productCategories(): void
+    {
+        // Get product categories with term IDs
+        $categories = Database::query(
+            "SELECT wp_term_id, slug, name, parent_id, count as product_count
+             FROM wp_product_categories
+             WHERE count > 0
+             ORDER BY name"
+        );
+        echo json_encode(['success' => true, 'data' => $categories]);
     }
 }

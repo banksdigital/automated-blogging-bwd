@@ -372,15 +372,17 @@ const App = {
         main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         
         try {
-            const [events, categories, authors, brands] = await Promise.all([
+            const [events, categories, authors, brands, productCategories] = await Promise.all([
                 this.api('/events'),
                 this.api('/categories'),
                 this.api('/authors'),
-                this.api('/products/brands')
+                this.api('/products/brands'),
+                this.api('/products/categories')
             ]);
             
-            // Store brands for use in renderSection
+            // Store brands and categories for use in renderSection
             this.brandsList = brands;
+            this.categoriesList = productCategories;
             
             let post = {
                 title: '',
@@ -520,7 +522,11 @@ const App = {
     
     renderSection(section, index) {
         const brandOptions = (this.brandsList || []).map(b => 
-            `<option value="${b.brand_slug}" ${section.carousel_brand_slug === b.brand_slug ? 'selected' : ''}>${this.escapeHtml(b.brand_name)}</option>`
+            `<option value="${b.wp_term_id}" ${section.carousel_brand_id == b.wp_term_id ? 'selected' : ''}>${this.escapeHtml(b.brand_name)}</option>`
+        ).join('');
+        
+        const categoryOptions = (this.categoriesList || []).map(c => 
+            `<option value="${c.wp_term_id}" ${section.carousel_category_id == c.wp_term_id ? 'selected' : ''}>${this.escapeHtml(c.name)}</option>`
         ).join('');
         
         return `
@@ -550,8 +556,11 @@ const App = {
                             </select>
                         </div>
                         <div>
-                            <label style="font-size: 11px; color: var(--text-muted);">Category Slug</label>
-                            <input type="text" class="form-input section-carousel-category" value="${this.escapeHtml(section.carousel_category_slug || '')}" placeholder="e.g. dresses, tops">
+                            <label style="font-size: 11px; color: var(--text-muted);">Product Category</label>
+                            <select class="form-input form-select section-carousel-category">
+                                <option value="">No category filter</option>
+                                ${categoryOptions}
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -590,8 +599,8 @@ const App = {
                 content: el.querySelector('.section-content').value,
                 cta_text: el.querySelector('.section-cta-text').value,
                 cta_url: el.querySelector('.section-cta-url').value,
-                carousel_brand_slug: el.querySelector('.section-carousel-brand')?.value || null,
-                carousel_category_slug: el.querySelector('.section-carousel-category')?.value || null
+                carousel_brand_id: el.querySelector('.section-carousel-brand')?.value || null,
+                carousel_category_id: el.querySelector('.section-carousel-category')?.value || null
             });
         });
         
@@ -1051,7 +1060,27 @@ const App = {
                     <div class="card">
                         <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
                             <div>
-                                <div style="font-weight:500;">Products</div>
+                                <div style="font-weight:500;">🏷️ Brands</div>
+                                <div style="font-size:13px;color:var(--text-secondary);">${status.brands?.count || 0} synced${status.brands?.last_sync ? ' • Last: ' + new Date(status.brands.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
+                            </div>
+                            <button class="btn btn-secondary" onclick="App.runSync('brands')">Sync Now</button>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <div style="font-weight:500;">📁 Product Categories</div>
+                                <div style="font-size:13px;color:var(--text-secondary);">${status.product_categories?.count || 0} synced${status.product_categories?.last_sync ? ' • Last: ' + new Date(status.product_categories.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
+                            </div>
+                            <button class="btn btn-secondary" onclick="App.runSync('product-categories')">Sync Now</button>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <div style="font-weight:500;">🛍️ Products</div>
                                 <div style="font-size:13px;color:var(--text-secondary);">${status.products.count} synced${status.products.last_sync ? ' • Last: ' + new Date(status.products.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
                             </div>
                             <button class="btn btn-secondary" onclick="App.runSync('products')">Sync Now</button>
@@ -1061,7 +1090,7 @@ const App = {
                     <div class="card">
                         <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
                             <div>
-                                <div style="font-weight:500;">Categories</div>
+                                <div style="font-weight:500;">📝 Blog Categories</div>
                                 <div style="font-size:13px;color:var(--text-secondary);">${status.categories.count} synced${status.categories.last_sync ? ' • Last: ' + new Date(status.categories.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
                             </div>
                             <button class="btn btn-secondary" onclick="App.runSync('categories')">Sync Now</button>
@@ -1071,7 +1100,7 @@ const App = {
                     <div class="card">
                         <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
                             <div>
-                                <div style="font-weight:500;">Authors</div>
+                                <div style="font-weight:500;">👤 Authors</div>
                                 <div style="font-size:13px;color:var(--text-secondary);">${status.authors.count} synced${status.authors.last_sync ? ' • Last: ' + new Date(status.authors.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
                             </div>
                             <button class="btn btn-secondary" onclick="App.runSync('authors')">Sync Now</button>
@@ -1081,7 +1110,7 @@ const App = {
                     <div class="card">
                         <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
                             <div>
-                                <div style="font-weight:500;">Page Blocks</div>
+                                <div style="font-weight:500;">🧩 Page Blocks</div>
                                 <div style="font-size:13px;color:var(--text-secondary);">${status.blocks.count} synced${status.blocks.last_sync ? ' • Last: ' + new Date(status.blocks.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
                             </div>
                             <button class="btn btn-secondary" onclick="App.runSync('blocks')">Sync Now</button>

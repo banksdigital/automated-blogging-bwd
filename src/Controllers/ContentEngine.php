@@ -219,8 +219,8 @@ class ContentEngine
                         $index = 0;
                         foreach ($content['sections'] as $section) {
                             Database::insert(
-                                "INSERT INTO post_sections (post_id, section_index, heading, content, cta_text, cta_url, carousel_brand_slug)
-                                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                "INSERT INTO post_sections (post_id, section_index, heading, content, cta_text, cta_url, carousel_brand_id, carousel_category_id)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                                 [
                                     $postId,
                                     $index++,
@@ -228,7 +228,8 @@ class ContentEngine
                                     $section['content'] ?? '',
                                     $section['cta_text'] ?? 'Shop Now',
                                     $section['cta_url'] ?? '',
-                                    $section['carousel_brand_slug'] ?? null
+                                    $section['carousel_brand_id'] ?? null,
+                                    $section['carousel_category_id'] ?? null
                                 ]
                             );
                         }

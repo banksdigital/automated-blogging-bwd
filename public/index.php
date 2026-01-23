@@ -197,6 +197,12 @@ function routeApi(string $path, string $method, array $config): void
         case $path === '/wordpress/sync/authors' && $method === 'POST':
             (new \App\Controllers\WordPressController($config))->syncAuthors();
             break;
+        case $path === '/wordpress/sync/brands' && $method === 'POST':
+            (new \App\Controllers\WordPressController($config))->syncBrands();
+            break;
+        case $path === '/wordpress/sync/product-categories' && $method === 'POST':
+            (new \App\Controllers\WordPressController($config))->syncProductCategories();
+            break;
         case $path === '/wordpress/sync/products' && $method === 'POST':
             (new \App\Controllers\WordPressController($config))->syncProducts();
             break;
@@ -219,6 +225,9 @@ function routeApi(string $path, string $method, array $config): void
             break;
         case $path === '/products/brands' && $method === 'GET':
             (new \App\Controllers\ProductController($config))->brands();
+            break;
+        case $path === '/products/categories' && $method === 'GET':
+            (new \App\Controllers\ProductController($config))->productCategories();
             break;
             
         // Categories, Authors, Blocks

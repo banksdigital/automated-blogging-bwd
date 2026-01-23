@@ -32,18 +32,33 @@ class ClaudeService
         $writingGuidelines = WritingGuidelinesController::getForPrompt();
         $products = $params['products'] ?? [];
         
-        // Get available brands for carousel suggestions
+        // Get available brands for carousel suggestions (with term IDs)
         $brands = Database::query(
-            "SELECT DISTINCT brand_slug, brand_name FROM wp_products 
-             WHERE brand_slug IS NOT NULL AND stock_status = 'instock' 
-             ORDER BY brand_name LIMIT 30"
+            "SELECT wp_term_id, slug, name FROM wp_brands 
+             WHERE count > 0 
+             ORDER BY name LIMIT 40"
         );
         
         $brandList = '';
         if (!empty($brands)) {
-            $brandList = "\n\nAvailable brands for product carousels:\n";
+            $brandList = "\n\nAvailable brands for product carousels (use the ID number for carousel_brand_id):\n";
             foreach ($brands as $b) {
-                $brandList .= "- {$b['brand_name']} (slug: {$b['brand_slug']})\n";
+                $brandList .= "- {$b['name']} (ID: {$b['wp_term_id']})\n";
+            }
+        }
+        
+        // Get available product categories
+        $categories = Database::query(
+            "SELECT wp_term_id, slug, name FROM wp_product_categories 
+             WHERE count > 0 
+             ORDER BY name LIMIT 40"
+        );
+        
+        $categoryList = '';
+        if (!empty($categories)) {
+            $categoryList = "\n\nAvailable product categories (use the ID number for carousel_category_id):\n";
+            foreach ($categories as $c) {
+                $categoryList .= "- {$c['name']} (ID: {$c['wp_term_id']})\n";
             }
         }
         
@@ -80,6 +95,7 @@ PROMPT;
         $userPrompt = <<<PROMPT
 {$params['prompt']}
 {$brandList}
+{$categoryList}
 {$productContext}
 
 Please generate a complete blog post with the following JSON structure:
@@ -93,7 +109,8 @@ Please generate a complete blog post with the following JSON structure:
             "content": "Section content (100-150 words) - mention the featured brand naturally",
             "cta_text": "Shop Now or similar",
             "cta_url": "/shop/category",
-            "carousel_brand_slug": "brand-slug-from-list-above or null if no specific brand"
+            "carousel_brand_id": 123,
+            "carousel_category_id": 456
         }
     ],
     "outro": "Closing paragraph with call to action (50-100 words)"
