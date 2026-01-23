@@ -313,6 +313,26 @@ function routeApi(string $path, string $method, array $config): void
         case $path === '/settings/brand-voice' && $method === 'PUT':
             (new \App\Controllers\SettingsController($config))->updateBrandVoice($input);
             break;
+        case $path === '/settings/defaults' && $method === 'GET':
+            (new \App\Controllers\SettingsController($config))->getDefaults();
+            break;
+        case $path === '/settings/defaults' && $method === 'POST':
+            (new \App\Controllers\SettingsController($config))->saveDefaults($input);
+            break;
+            
+        // Maintenance
+        case $path === '/maintenance/stats' && $method === 'GET':
+            (new \App\Controllers\MaintenanceController())->stats();
+            break;
+        case $path === '/maintenance/clear-posts' && $method === 'POST':
+            (new \App\Controllers\MaintenanceController())->clearPosts();
+            break;
+        case $path === '/maintenance/reset-scheduled' && $method === 'POST':
+            (new \App\Controllers\MaintenanceController())->resetScheduled();
+            break;
+        case $path === '/maintenance/reseed-events' && $method === 'POST':
+            (new \App\Controllers\MaintenanceController())->reseedEvents();
+            break;
             
         // Stats
         case $path === '/stats/dashboard' && $method === 'GET':

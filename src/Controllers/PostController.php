@@ -453,4 +453,42 @@ class PostController
             error_log("Failed to log activity: " . $e->getMessage());
         }
     }
+    
+    /**
+     * Delete a post and its sections
+     */
+    public function delete(int $id): void
+    {
+        try {
+            // Check post exists
+            $post = Database::queryOne("SELECT id FROM posts WHERE id = ?", [$id]);
+            
+            if (!$post) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Post not found']]);
+                return;
+            }
+            
+            // Reset any scheduled content pointing to this post
+            Database::execute(
+                "UPDATE scheduled_content SET status = 'pending', post_id = NULL WHERE post_id = ?",
+                [$id]
+            );
+            
+            // Delete sections first
+            Database::execute("DELETE FROM post_sections WHERE post_id = ?", [$id]);
+            
+            // Delete the post
+            Database::execute("DELETE FROM posts WHERE id = ?", [$id]);
+            
+            echo json_encode(['success' => true, 'message' => 'Post deleted']);
+            
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
+    }
 }

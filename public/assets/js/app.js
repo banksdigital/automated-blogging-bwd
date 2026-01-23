@@ -122,12 +122,16 @@ const App = {
             this.loadAutoPilot();
         } else if (path === '/settings') {
             this.loadSettings();
+        } else if (path === '/settings/defaults') {
+            this.loadDefaultSettings();
         } else if (path === '/settings/brand-voice') {
             this.loadBrandVoice();
         } else if (path === '/settings/writing-guidelines') {
             this.loadWritingGuidelines();
         } else if (path === '/settings/sync') {
             this.loadSync();
+        } else if (path === '/settings/maintenance') {
+            this.loadMaintenance();
         }
     },
 
@@ -324,22 +328,26 @@ const App = {
                                     <th>Date</th>
                                     <th>Event</th>
                                     <th>Status</th>
+                                    <th style="width:50px;"></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${posts.length ? posts.map(post => `
-                                    <tr data-status="${post.status}" onclick="App.navigate('/posts/${post.id}')" style="cursor: pointer;">
-                                        <td>
+                                    <tr data-status="${post.status}">
+                                        <td onclick="App.navigate('/posts/${post.id}')" style="cursor:pointer;">
                                             <div style="font-weight: 500;">${this.escapeHtml(post.title)}</div>
                                             <div style="font-size: 12px; color: var(--text-secondary);">${post.section_count || 0} sections</div>
                                         </td>
-                                        <td style="color: var(--text-secondary);">
+                                        <td onclick="App.navigate('/posts/${post.id}')" style="cursor:pointer;color: var(--text-secondary);">
                                             ${post.scheduled_date ? new Date(post.scheduled_date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
                                         </td>
-                                        <td>${post.event_name ? `<span style="font-size: 12px; padding: 4px 10px; background: var(--bg-tertiary);">${this.escapeHtml(post.event_name)}</span>` : '—'}</td>
-                                        <td><span class="status-badge status-${post.status}"><span class="status-dot"></span> ${post.status}</span></td>
+                                        <td onclick="App.navigate('/posts/${post.id}')" style="cursor:pointer;">${post.event_name ? `<span style="font-size: 12px; padding: 4px 10px; background: var(--bg-tertiary);">${this.escapeHtml(post.event_name)}</span>` : '—'}</td>
+                                        <td onclick="App.navigate('/posts/${post.id}')" style="cursor:pointer;"><span class="status-badge status-${post.status}"><span class="status-dot"></span> ${post.status}</span></td>
+                                        <td>
+                                            <button class="btn btn-sm" style="background:transparent;color:var(--status-error);padding:6px 8px;" onclick="App.deletePost(${post.id}, event)" title="Delete">🗑️</button>
+                                        </td>
                                     </tr>
-                                `).join('') : '<tr><td colspan="4" style="text-align:center;padding:40px;color:var(--text-secondary);">No posts yet</td></tr>'}
+                                `).join('') : '<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text-secondary);">No posts yet</td></tr>'}
                             </tbody>
                         </table>
                     </div>
@@ -363,6 +371,19 @@ const App = {
             });
         } catch (error) {
             main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error loading posts</div><p>${error.message}</p></div>`;
+        }
+    },
+    
+    async deletePost(id, e) {
+        e.stopPropagation();
+        if (!confirm('Delete this post? This cannot be undone.')) return;
+        
+        try {
+            await this.api(`/posts/${id}`, { method: 'DELETE' });
+            this.toast('Post deleted', 'success');
+            this.loadPosts();
+        } catch (error) {
+            this.toast(error.message, 'error');
         }
     },
 
@@ -1116,6 +1137,14 @@ const App = {
             </div>
             
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:24px;">
+                <div class="card" onclick="App.navigate('/settings/defaults')" style="cursor:pointer;">
+                    <div class="card-body" style="text-align:center;padding:40px;">
+                        <div style="font-size:32px;margin-bottom:12px;">⚙️</div>
+                        <div style="font-weight:600;margin-bottom:4px;">Default Settings</div>
+                        <div style="font-size:13px;color:var(--text-secondary);">Default author, category for new posts</div>
+                    </div>
+                </div>
+                
                 <div class="card" onclick="App.navigate('/settings/sync')" style="cursor:pointer;">
                     <div class="card-body" style="text-align:center;padding:40px;">
                         <div style="font-size:32px;margin-bottom:12px;">🔄</div>
@@ -1139,8 +1168,180 @@ const App = {
                         <div style="font-size:13px;color:var(--text-secondary);">Words and phrases AI should avoid</div>
                     </div>
                 </div>
+                
+                <div class="card" onclick="App.navigate('/settings/maintenance')" style="cursor:pointer;">
+                    <div class="card-body" style="text-align:center;padding:40px;">
+                        <div style="font-size:32px;margin-bottom:12px;">🧹</div>
+                        <div style="font-weight:600;margin-bottom:4px;">Maintenance</div>
+                        <div style="font-size:13px;color:var(--text-secondary);">Clear posts, reset scheduled content</div>
+                    </div>
+                </div>
             </div>
         `;
+    },
+    
+    // ==================== DEFAULT SETTINGS ====================
+    async loadDefaultSettings() {
+        const main = document.getElementById('main-content');
+        main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        
+        try {
+            const [authors, categories, settings] = await Promise.all([
+                this.api('/authors'),
+                this.api('/categories'),
+                this.api('/settings/defaults')
+            ]);
+            
+            const authorOptions = authors.map(a => 
+                `<option value="${a.id}" ${settings.default_author_id == a.id ? 'selected' : ''}>${this.escapeHtml(a.name)}</option>`
+            ).join('');
+            
+            const categoryOptions = categories.map(c => 
+                `<option value="${c.id}" ${settings.default_category_id == c.id ? 'selected' : ''}>${this.escapeHtml(c.name)}</option>`
+            ).join('');
+            
+            main.innerHTML = `
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Default Settings</h1>
+                        <p class="page-subtitle">Set defaults for all new posts</p>
+                    </div>
+                </div>
+                
+                <div class="card" style="max-width:500px;">
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label class="form-label">Default Author</label>
+                            <select id="default-author" class="form-input form-select">
+                                <option value="">-- Select Author --</option>
+                                ${authorOptions}
+                            </select>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">All new posts will be assigned to this author</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Default Category</label>
+                            <select id="default-category" class="form-input form-select">
+                                <option value="">-- Select Category --</option>
+                                ${categoryOptions}
+                            </select>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">All new posts will be assigned to this category</div>
+                        </div>
+                        
+                        <button class="btn btn-primary" onclick="App.saveDefaultSettings()">Save Defaults</button>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
+        }
+    },
+    
+    async saveDefaultSettings() {
+        const data = {
+            default_author_id: document.getElementById('default-author').value || null,
+            default_category_id: document.getElementById('default-category').value || null
+        };
+        
+        try {
+            await this.api('/settings/defaults', { method: 'POST', body: data });
+            this.toast('Default settings saved!', 'success');
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    // ==================== MAINTENANCE ====================
+    async loadMaintenance() {
+        const main = document.getElementById('main-content');
+        main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        
+        try {
+            const stats = await this.api('/maintenance/stats');
+            
+            main.innerHTML = `
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Maintenance</h1>
+                        <p class="page-subtitle">Database cleanup and reset options</p>
+                    </div>
+                </div>
+                
+                <div style="display:grid;gap:24px;max-width:600px;">
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">📝 Posts</span>
+                            <span style="color:var(--text-secondary);">${stats.posts || 0} posts, ${stats.sections || 0} sections</span>
+                        </div>
+                        <div class="card-body">
+                            <p style="margin-bottom:16px;color:var(--text-secondary);">Delete all posts and their sections. This will also reset scheduled content back to pending.</p>
+                            <button class="btn btn-danger" onclick="App.clearAllPosts()">🗑️ Clear All Posts</button>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">📅 Scheduled Content</span>
+                            <span style="color:var(--text-secondary);">${stats.scheduled || 0} items</span>
+                        </div>
+                        <div class="card-body">
+                            <p style="margin-bottom:16px;color:var(--text-secondary);">Reset all scheduled content to pending status (keeps posts but allows regeneration).</p>
+                            <button class="btn btn-secondary" onclick="App.resetScheduledContent()">↩️ Reset to Pending</button>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">🗓️ Seasonal Events</span>
+                            <span style="color:var(--text-secondary);">${stats.events || 0} events</span>
+                        </div>
+                        <div class="card-body">
+                            <p style="margin-bottom:16px;color:var(--text-secondary);">Re-seed seasonal events (Valentine's, Mother's Day, Black Friday, etc).</p>
+                            <button class="btn btn-secondary" onclick="App.reseedEvents()">🌱 Re-seed Events</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
+        }
+    },
+    
+    async clearAllPosts() {
+        if (!confirm('Are you sure you want to delete ALL posts and sections? This cannot be undone.')) return;
+        if (!confirm('Really sure? This will delete everything and reset scheduled content.')) return;
+        
+        try {
+            const result = await this.api('/maintenance/clear-posts', { method: 'POST' });
+            this.toast(result.message || 'All posts cleared!', 'success');
+            this.loadMaintenance();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async resetScheduledContent() {
+        if (!confirm('Reset all scheduled content to pending? Posts will remain but can be regenerated.')) return;
+        
+        try {
+            const result = await this.api('/maintenance/reset-scheduled', { method: 'POST' });
+            this.toast(result.message || 'Scheduled content reset!', 'success');
+            this.loadMaintenance();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async reseedEvents() {
+        if (!confirm('Re-seed seasonal events? This will add any missing events.')) return;
+        
+        try {
+            const result = await this.api('/maintenance/reseed-events', { method: 'POST' });
+            this.toast(result.message || 'Events re-seeded!', 'success');
+            this.loadMaintenance();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
     },
 
     // ==================== SYNC ====================
