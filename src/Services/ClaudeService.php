@@ -32,9 +32,24 @@ class ClaudeService
         $writingGuidelines = WritingGuidelinesController::getForPrompt();
         $products = $params['products'] ?? [];
         
+        // Get available brands for carousel suggestions
+        $brands = Database::query(
+            "SELECT DISTINCT brand_slug, brand_name FROM wp_products 
+             WHERE brand_slug IS NOT NULL AND stock_status = 'instock' 
+             ORDER BY brand_name LIMIT 30"
+        );
+        
+        $brandList = '';
+        if (!empty($brands)) {
+            $brandList = "\n\nAvailable brands for product carousels:\n";
+            foreach ($brands as $b) {
+                $brandList .= "- {$b['brand_name']} (slug: {$b['brand_slug']})\n";
+            }
+        }
+        
         $productContext = '';
         if (!empty($products)) {
-            $productContext = "\n\nAvailable products to feature (choose the most relevant ones):\n";
+            $productContext = "\n\nSample products available:\n";
             foreach (array_slice($products, 0, 15) as $p) {
                 $productContext .= "- {$p['title']} by {$p['brand_name']} (£{$p['price']})\n";
             }
@@ -59,10 +74,12 @@ Format Requirements:
 - Each section should be 100-150 words
 - Include natural product mentions where relevant
 - Use headers that are descriptive and engaging
+- Each section should feature products from a specific brand when relevant
 PROMPT;
 
         $userPrompt = <<<PROMPT
 {$params['prompt']}
+{$brandList}
 {$productContext}
 
 Please generate a complete blog post with the following JSON structure:
@@ -73,15 +90,16 @@ Please generate a complete blog post with the following JSON structure:
     "sections": [
         {
             "heading": "Section heading",
-            "content": "Section content (100-150 words)",
+            "content": "Section content (100-150 words) - mention the featured brand naturally",
             "cta_text": "Shop Now or similar",
-            "cta_url": "/shop/category"
+            "cta_url": "/shop/category",
+            "carousel_brand_slug": "brand-slug-from-list-above or null if no specific brand"
         }
     ],
     "outro": "Closing paragraph with call to action (50-100 words)"
 }
 
-Generate 3-5 sections depending on the content type. Return ONLY valid JSON, no markdown or explanation.
+Generate 3-5 sections. Each section should ideally feature a different brand from the available list. Return ONLY valid JSON, no markdown or explanation.
 PROMPT;
 
         $response = $this->callApi($systemPrompt, $userPrompt);

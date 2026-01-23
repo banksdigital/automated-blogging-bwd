@@ -372,11 +372,15 @@ const App = {
         main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         
         try {
-            const [events, categories, authors] = await Promise.all([
+            const [events, categories, authors, brands] = await Promise.all([
                 this.api('/events'),
                 this.api('/categories'),
-                this.api('/authors')
+                this.api('/authors'),
+                this.api('/products/brands')
             ]);
+            
+            // Store brands for use in renderSection
+            this.brandsList = brands;
             
             let post = {
                 title: '',
@@ -515,6 +519,10 @@ const App = {
     },
     
     renderSection(section, index) {
+        const brandOptions = (this.brandsList || []).map(b => 
+            `<option value="${b.brand_slug}" ${section.carousel_brand_slug === b.brand_slug ? 'selected' : ''}>${this.escapeHtml(b.brand_name)}</option>`
+        ).join('');
+        
         return `
             <div class="section-item" data-index="${index}" style="border: 1px solid var(--border-default); padding: 20px; margin-bottom: 16px;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
@@ -527,9 +535,25 @@ const App = {
                 <div class="form-group">
                     <textarea class="form-input form-textarea section-content" rows="4" placeholder="Section content...">${this.escapeHtml(section.content || '')}</textarea>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
                     <input type="text" class="form-input section-cta-text" value="${this.escapeHtml(section.cta_text || '')}" placeholder="CTA text...">
                     <input type="text" class="form-input section-cta-url" value="${this.escapeHtml(section.cta_url || '')}" placeholder="CTA URL...">
+                </div>
+                <div style="background: var(--bg-secondary); padding: 12px; border-radius: 6px;">
+                    <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">🛍️ Product Carousel</div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div>
+                            <label style="font-size: 11px; color: var(--text-muted);">Brand</label>
+                            <select class="form-input form-select section-carousel-brand">
+                                <option value="">No brand filter</option>
+                                ${brandOptions}
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; color: var(--text-muted);">Category Slug</label>
+                            <input type="text" class="form-input section-carousel-category" value="${this.escapeHtml(section.carousel_category_slug || '')}" placeholder="e.g. dresses, tops">
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -565,7 +589,9 @@ const App = {
                 heading: el.querySelector('.section-heading').value,
                 content: el.querySelector('.section-content').value,
                 cta_text: el.querySelector('.section-cta-text').value,
-                cta_url: el.querySelector('.section-cta-url').value
+                cta_url: el.querySelector('.section-cta-url').value,
+                carousel_brand_slug: el.querySelector('.section-carousel-brand')?.value || null,
+                carousel_category_slug: el.querySelector('.section-carousel-category')?.value || null
             });
         });
         
