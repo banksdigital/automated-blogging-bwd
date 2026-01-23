@@ -32,33 +32,53 @@ class ClaudeService
         $writingGuidelines = WritingGuidelinesController::getForPrompt();
         $products = $params['products'] ?? [];
         
-        // Get available brands for carousel suggestions (with term IDs)
-        $brands = Database::query(
-            "SELECT wp_term_id, slug, name FROM wp_brands 
-             WHERE count > 0 
-             ORDER BY name LIMIT 40"
+        // Get valid brand + category combinations that actually have products in stock
+        $validCombos = Database::query(
+            "SELECT 
+                b.wp_term_id as brand_id,
+                b.name as brand_name,
+                pc.wp_term_id as category_id,
+                pc.name as category_name,
+                COUNT(*) as product_count
+             FROM wp_products p
+             JOIN wp_brands b ON p.brand_id = b.wp_term_id
+             JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
+             WHERE p.stock_status = 'instock'
+             GROUP BY b.wp_term_id, b.name, pc.wp_term_id, pc.name
+             HAVING product_count >= 3
+             ORDER BY b.name, pc.name
+             LIMIT 100"
         );
         
-        $brandList = '';
-        if (!empty($brands)) {
-            $brandList = "\n\nAvailable brands for product carousels (use the ID number for carousel_brand_id):\n";
-            foreach ($brands as $b) {
-                $brandList .= "- {$b['name']} (ID: {$b['wp_term_id']})\n";
+        // Also get brands with their total product counts (for brand-only carousels)
+        $brandsOnly = Database::query(
+            "SELECT 
+                b.wp_term_id as brand_id,
+                b.name as brand_name,
+                COUNT(*) as product_count
+             FROM wp_products p
+             JOIN wp_brands b ON p.brand_id = b.wp_term_id
+             WHERE p.stock_status = 'instock'
+             GROUP BY b.wp_term_id, b.name
+             HAVING product_count >= 5
+             ORDER BY product_count DESC
+             LIMIT 50"
+        );
+        
+        $comboList = '';
+        if (!empty($validCombos)) {
+            $comboList = "\n\nVALID BRAND + CATEGORY COMBINATIONS (these have actual products in stock):\n";
+            $comboList .= "Format: Brand Name (brand_id) + Category Name (category_id) - X products\n";
+            foreach ($validCombos as $c) {
+                $comboList .= "- {$c['brand_name']} ({$c['brand_id']}) + {$c['category_name']} ({$c['category_id']}) - {$c['product_count']} products\n";
             }
         }
         
-        // Get available product categories
-        $categories = Database::query(
-            "SELECT wp_term_id, slug, name FROM wp_product_categories 
-             WHERE count > 0 
-             ORDER BY name LIMIT 40"
-        );
-        
-        $categoryList = '';
-        if (!empty($categories)) {
-            $categoryList = "\n\nAvailable product categories (use the ID number for carousel_category_id):\n";
-            foreach ($categories as $c) {
-                $categoryList .= "- {$c['name']} (ID: {$c['wp_term_id']})\n";
+        $brandOnlyList = '';
+        if (!empty($brandsOnly)) {
+            $brandOnlyList = "\n\nBRANDS FOR BRAND-ONLY CAROUSELS (no category filter):\n";
+            foreach ($brandsOnly as $b) {
+                $brandOnlyList .= "- {$b['brand_name']} (brand_id: {$b['brand_id']}) - {$b['product_count']} products\n";
             }
         }
         
@@ -89,13 +109,14 @@ Format Requirements:
 - Each section should be 100-150 words
 - Include natural product mentions where relevant
 - Use headers that are descriptive and engaging
-- Each section should feature products from a specific brand when relevant
+
+CRITICAL: You MUST only use brand/category combinations from the provided lists. These are the only combinations that have actual products. Do not invent or assume combinations exist.
 PROMPT;
 
         $userPrompt = <<<PROMPT
 {$params['prompt']}
-{$brandList}
-{$categoryList}
+{$comboList}
+{$brandOnlyList}
 {$productContext}
 
 Please generate a complete blog post with the following JSON structure:
@@ -116,7 +137,13 @@ Please generate a complete blog post with the following JSON structure:
     "outro": "Closing paragraph with call to action (50-100 words)"
 }
 
-Generate 3-5 sections. Each section should ideally feature a different brand from the available list. Return ONLY valid JSON, no markdown or explanation.
+IMPORTANT RULES FOR CAROUSELS:
+1. ONLY use brand_id and category_id combinations from the VALID COMBINATIONS list above
+2. If using a brand-only carousel (no category filter), set carousel_category_id to null
+3. Never invent combinations - if a brand+category isn't in the list, don't use it
+4. Each section should feature a different brand for variety
+
+Generate 3-5 sections. Return ONLY valid JSON, no markdown or explanation.
 PROMPT;
 
         $response = $this->callApi($systemPrompt, $userPrompt);
@@ -124,7 +151,62 @@ PROMPT;
         // Parse JSON response
         $content = $this->parseJsonResponse($response);
         
+        // Validate carousel combinations have actual products
+        if (!empty($content['sections'])) {
+            foreach ($content['sections'] as &$section) {
+                $brandId = $section['carousel_brand_id'] ?? null;
+                $categoryId = $section['carousel_category_id'] ?? null;
+                
+                if ($brandId) {
+                    // Check if this combination has products
+                    $hasProducts = $this->validateCarouselCombo($brandId, $categoryId);
+                    
+                    if (!$hasProducts) {
+                        // Try brand-only (remove category)
+                        if ($this->validateCarouselCombo($brandId, null)) {
+                            $section['carousel_category_id'] = null;
+                            error_log("Carousel validation: Removed invalid category for brand {$brandId}");
+                        } else {
+                            // No products at all - clear carousel
+                            $section['carousel_brand_id'] = null;
+                            $section['carousel_category_id'] = null;
+                            error_log("Carousel validation: Cleared invalid carousel for brand {$brandId}");
+                        }
+                    }
+                }
+            }
+        }
+        
         return $content;
+    }
+    
+    /**
+     * Validate that a brand/category combination has products in stock
+     */
+    private function validateCarouselCombo(?int $brandId, ?int $categoryId): bool
+    {
+        if (!$brandId) {
+            return false;
+        }
+        
+        if ($categoryId) {
+            // Check brand + category combo
+            $result = Database::queryOne(
+                "SELECT COUNT(*) as cnt FROM wp_products p
+                 JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
+                 WHERE p.brand_id = ? AND pc.wp_term_id = ? AND p.stock_status = 'instock'",
+                [$brandId, $categoryId]
+            );
+        } else {
+            // Check brand only
+            $result = Database::queryOne(
+                "SELECT COUNT(*) as cnt FROM wp_products 
+                 WHERE brand_id = ? AND stock_status = 'instock'",
+                [$brandId]
+            );
+        }
+        
+        return ($result['cnt'] ?? 0) >= 3;
     }
 
     /**
