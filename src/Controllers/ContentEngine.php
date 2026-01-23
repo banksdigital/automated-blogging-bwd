@@ -216,14 +216,14 @@ class ContentEngine
                     
                     // Create sections
                     if (!empty($content['sections'])) {
-                        $order = 0;
+                        $index = 0;
                         foreach ($content['sections'] as $section) {
                             Database::insert(
-                                "INSERT INTO post_sections (post_id, section_order, heading, content, cta_text, cta_url)
+                                "INSERT INTO post_sections (post_id, section_index, heading, content, cta_text, cta_url)
                                  VALUES (?, ?, ?, ?, ?, ?)",
                                 [
                                     $postId,
-                                    $order++,
+                                    $index++,
                                     $section['heading'] ?? '',
                                     $section['content'] ?? '',
                                     $section['cta_text'] ?? 'Shop Now',
