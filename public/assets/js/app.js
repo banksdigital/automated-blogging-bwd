@@ -425,8 +425,11 @@ const App = {
             const isExistingPost = !!id;
             const isPublished = post.wp_post_id;
             
+            // Reset Claude assistant for new post
+            Claude.reset();
+            
             main.innerHTML = `
-                <div class="page-header">
+                <div class="page-header" ${isPublished ? `data-wp-post-id="${post.wp_post_id}"` : ''}>
                     <div>
                         <h1 class="page-title">${id ? 'Edit Post' : 'New Post'}</h1>
                         ${isPublished ? `<p class="page-subtitle" style="color:var(--status-published);">✓ Published to WordPress (ID: ${post.wp_post_id})</p>` : ''}
@@ -534,7 +537,7 @@ const App = {
                             <div class="card-body">
                                 <button class="btn btn-secondary" style="width:100%;margin-bottom:8px;" onclick="App.aiGeneratePost()">✨ Generate Full Post</button>
                                 <button class="btn btn-secondary" style="width:100%;margin-bottom:8px;" onclick="App.aiGenerateMeta()">📝 Generate Meta Description</button>
-                                <button class="btn btn-secondary" style="width:100%;" onclick="Claude.open()">💬 Chat with Claude</button>
+                                <button class="btn btn-primary" style="width:100%;" onclick="Claude.open(${id || 'null'})">💬 Refine with AI</button>
                             </div>
                         </div>
                     </div>
@@ -1854,10 +1857,22 @@ const App = {
 const Claude = {
     isOpen: false,
     messages: [],
+    currentPostId: null,
     
-    open() {
+    open(postId = null) {
+        this.currentPostId = postId;
         document.getElementById('claude-panel').classList.add('open');
         this.isOpen = true;
+        
+        // Show context-aware welcome message if we have a post
+        if (postId && this.messages.length === 0) {
+            const postTitle = document.getElementById('post-title')?.value || 'this post';
+            this.messages.push({ 
+                role: 'assistant', 
+                content: `I can help you refine "${postTitle}". Try asking me to:\n\n• "Make the intro more casual"\n• "Shorten section 2"\n• "Remove the carousel from section 3"\n• "Rewrite the outro with a stronger call to action"\n• "Change the CTA in section 1 to Shop Sunglasses"\n\nWhat would you like to change?`
+            });
+            this.renderMessages();
+        }
     },
     
     close() {
@@ -1866,7 +1881,93 @@ const Claude = {
     },
     
     toggle() {
-        this.isOpen ? this.close() : this.open();
+        this.isOpen ? this.close() : this.open(this.currentPostId);
+    },
+    
+    // Get current post state from the form
+    getCurrentPostState() {
+        const sections = [];
+        document.querySelectorAll('.section-item').forEach((el, i) => {
+            sections.push({
+                index: i,
+                heading: el.querySelector('.section-heading')?.value || '',
+                content: el.querySelector('.section-content')?.value || '',
+                cta_text: el.querySelector('.section-cta-text')?.value || '',
+                cta_url: el.querySelector('.section-cta-url')?.value || '',
+                carousel_brand_id: el.querySelector('.section-carousel-brand')?.value || null,
+                carousel_category_id: el.querySelector('.section-carousel-category')?.value || null
+            });
+        });
+        
+        return {
+            id: this.currentPostId,
+            title: document.getElementById('post-title')?.value || '',
+            intro_content: document.getElementById('post-intro')?.value || '',
+            outro_content: document.getElementById('post-outro')?.value || '',
+            meta_description: document.getElementById('post-meta')?.value || '',
+            sections: sections
+        };
+    },
+    
+    // Apply updates from Claude to the form
+    applyUpdates(updates) {
+        if (!updates) return;
+        
+        let changesMade = [];
+        
+        if (updates.title !== undefined) {
+            document.getElementById('post-title').value = updates.title;
+            changesMade.push('Title');
+        }
+        
+        if (updates.intro_content !== undefined) {
+            document.getElementById('post-intro').value = updates.intro_content;
+            changesMade.push('Intro');
+        }
+        
+        if (updates.outro_content !== undefined) {
+            document.getElementById('post-outro').value = updates.outro_content;
+            changesMade.push('Outro');
+        }
+        
+        if (updates.meta_description !== undefined) {
+            document.getElementById('post-meta').value = updates.meta_description;
+            document.getElementById('meta-count').textContent = updates.meta_description.length;
+            changesMade.push('Meta description');
+        }
+        
+        if (updates.sections !== undefined) {
+            updates.sections.forEach(sectionUpdate => {
+                const sectionEl = document.querySelector(`.section-item[data-index="${sectionUpdate.index}"]`);
+                if (sectionEl) {
+                    if (sectionUpdate.heading !== undefined) {
+                        sectionEl.querySelector('.section-heading').value = sectionUpdate.heading;
+                    }
+                    if (sectionUpdate.content !== undefined) {
+                        sectionEl.querySelector('.section-content').value = sectionUpdate.content;
+                    }
+                    if (sectionUpdate.cta_text !== undefined) {
+                        sectionEl.querySelector('.section-cta-text').value = sectionUpdate.cta_text;
+                    }
+                    if (sectionUpdate.cta_url !== undefined) {
+                        sectionEl.querySelector('.section-cta-url').value = sectionUpdate.cta_url;
+                    }
+                    if (sectionUpdate.carousel_brand_id !== undefined) {
+                        sectionEl.querySelector('.section-carousel-brand').value = sectionUpdate.carousel_brand_id || '';
+                    }
+                    if (sectionUpdate.carousel_category_id !== undefined) {
+                        sectionEl.querySelector('.section-carousel-category').value = sectionUpdate.carousel_category_id || '';
+                    }
+                    changesMade.push(`Section ${sectionUpdate.index + 1}`);
+                }
+            });
+        }
+        
+        if (changesMade.length > 0) {
+            App.toast(`Updated: ${changesMade.join(', ')}`, 'success');
+        }
+        
+        return changesMade;
     },
     
     async send(message) {
@@ -1876,24 +1977,67 @@ const Claude = {
         this.renderMessages();
         
         document.getElementById('claude-input').value = '';
+        document.getElementById('claude-send').disabled = true;
+        document.getElementById('claude-send').textContent = '...';
         
         try {
-            const response = await App.api('/claude/chat', { method: 'POST', body: { message } });
-            this.messages.push({ role: 'assistant', content: response });
+            const postState = this.getCurrentPostState();
+            
+            const response = await App.api('/claude/post-assistant', { 
+                method: 'POST', 
+                body: { 
+                    message,
+                    post: postState,
+                    history: this.messages.slice(-10) // Send last 10 messages for context
+                } 
+            });
+            
+            // Apply any updates Claude suggested
+            if (response.updates) {
+                this.applyUpdates(response.updates);
+            }
+            
+            // Add Claude's response message
+            let assistantMessage = response.message;
+            
+            // If post is already on WordPress and changes were made, offer to push
+            if (response.updates && postState.id) {
+                const wpPostId = document.querySelector('[data-wp-post-id]')?.dataset.wpPostId;
+                if (wpPostId) {
+                    assistantMessage += '\n\n✅ Changes applied! Click "Save Post" then "Update in WordPress" to push changes live.';
+                } else {
+                    assistantMessage += '\n\n✅ Changes applied! Remember to save the post.';
+                }
+            }
+            
+            this.messages.push({ role: 'assistant', content: assistantMessage });
             this.renderMessages();
+            
         } catch (error) {
             App.toast(error.message, 'error');
+            this.messages.push({ role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' });
+            this.renderMessages();
+        } finally {
+            document.getElementById('claude-send').disabled = false;
+            document.getElementById('claude-send').textContent = 'Send';
         }
     },
     
     renderMessages() {
         const container = document.getElementById('claude-messages');
+        if (!container) return;
+        
         container.innerHTML = this.messages.map(msg => `
-            <div class="claude-message claude-message-${msg.role}" style="margin-bottom:16px;${msg.role === 'user' ? 'background:var(--bg-tertiary);padding:12px;margin-left:40px;' : ''}">
+            <div class="claude-message claude-message-${msg.role}" style="margin-bottom:16px;padding:12px;${msg.role === 'user' ? 'background:var(--bg-tertiary);margin-left:40px;' : 'background:var(--bg-secondary);border-left:2px solid var(--text-primary);'}">
                 ${App.escapeHtml(msg.content).replace(/\n/g, '<br>')}
             </div>
         `).join('');
         container.scrollTop = container.scrollHeight;
+    },
+    
+    reset() {
+        this.messages = [];
+        this.currentPostId = null;
     }
 };
 

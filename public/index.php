@@ -299,6 +299,9 @@ function routeApi(string $path, string $method, array $config): void
         case $path === '/claude/chat' && $method === 'POST':
             (new \App\Controllers\ClaudeController($config))->chat($input);
             break;
+        case $path === '/claude/post-assistant' && $method === 'POST':
+            (new \App\Controllers\ClaudeController($config))->postAssistant($input);
+            break;
             
         // Settings
         case $path === '/settings' && $method === 'GET':

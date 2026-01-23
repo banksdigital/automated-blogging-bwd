@@ -145,9 +145,16 @@ IMPORTANT RULES:
 1. ONLY use brand_id and category_id combinations from the VALID COMBINATIONS list above
 2. If using a brand-only carousel (no category filter), set carousel_category_id to null
 3. Never invent combinations - if a brand+category isn't in the list, don't use it
-4. Each section should feature a different brand for variety
-5. CTA URLs MUST use format /brand/brand-slug/ (e.g. /brand/anine-bing/, /brand/citizens-of-humanity/)
-6. For category links use /product-category/category-slug/ (e.g. /product-category/dresses/)
+4. CTA URLs MUST use format /brand/brand-slug/ (e.g. /brand/anine-bing/, /brand/citizens-of-humanity/)
+5. For category links use /product-category/category-slug/ (e.g. /product-category/dresses/)
+
+CAROUSEL RULES - VERY IMPORTANT:
+- NOT every section needs a carousel - only add carousels where they add value
+- Maximum 2-3 carousels per post total
+- NEVER repeat the same brand+category combination - each carousel must be unique
+- If a post focuses on one brand with few categories, use just 1-2 carousels strategically placed
+- Set carousel_brand_id and carousel_category_id to null for sections that don't need a carousel
+- Place carousels after sections that specifically discuss those products
 
 Generate 3-5 sections. Return ONLY valid JSON, no markdown or explanation.
 PROMPT;
@@ -157,8 +164,12 @@ PROMPT;
         // Parse JSON response
         $content = $this->parseJsonResponse($response);
         
-        // Validate carousel combinations have actual products
+        // Validate carousel combinations and remove duplicates
         if (!empty($content['sections'])) {
+            $usedCombos = []; // Track used brand+category combinations
+            $carouselCount = 0;
+            $maxCarousels = 3;
+            
             foreach ($content['sections'] as &$section) {
                 $brandId = $section['carousel_brand_id'] ?? null;
                 $categoryId = $section['carousel_category_id'] ?? null;
@@ -171,14 +182,38 @@ PROMPT;
                         // Try brand-only (remove category)
                         if ($this->validateCarouselCombo($brandId, null)) {
                             $section['carousel_category_id'] = null;
+                            $categoryId = null;
                             error_log("Carousel validation: Removed invalid category for brand {$brandId}");
                         } else {
                             // No products at all - clear carousel
                             $section['carousel_brand_id'] = null;
                             $section['carousel_category_id'] = null;
                             error_log("Carousel validation: Cleared invalid carousel for brand {$brandId}");
+                            continue;
                         }
                     }
+                    
+                    // Check for duplicate combo
+                    $comboKey = $brandId . '-' . ($categoryId ?? 'all');
+                    if (in_array($comboKey, $usedCombos)) {
+                        // Duplicate - clear this carousel
+                        $section['carousel_brand_id'] = null;
+                        $section['carousel_category_id'] = null;
+                        error_log("Carousel validation: Removed duplicate combo {$comboKey}");
+                        continue;
+                    }
+                    
+                    // Check max carousel limit
+                    if ($carouselCount >= $maxCarousels) {
+                        $section['carousel_brand_id'] = null;
+                        $section['carousel_category_id'] = null;
+                        error_log("Carousel validation: Max carousels reached, removing extra");
+                        continue;
+                    }
+                    
+                    // Valid unique carousel - track it
+                    $usedCombos[] = $comboKey;
+                    $carouselCount++;
                 }
             }
         }
@@ -473,5 +508,162 @@ PROMPT;
         }
         
         return $voiceText;
+    }
+    
+    /**
+     * AI Assistant for refining a specific post
+     */
+    public function postAssistant(array $params): array
+    {
+        $message = $params['message'] ?? '';
+        $post = $params['post'] ?? [];
+        $history = $params['history'] ?? [];
+        
+        $brandVoice = $this->getBrandVoice();
+        $writingGuidelines = WritingGuidelinesController::getForPrompt();
+        
+        // Build current post context
+        $postContext = "CURRENT POST STATE:\n";
+        $postContext .= "Title: " . ($post['title'] ?? 'Untitled') . "\n";
+        $postContext .= "Intro: " . ($post['intro_content'] ?? 'Empty') . "\n";
+        $postContext .= "Outro: " . ($post['outro_content'] ?? 'Empty') . "\n";
+        $postContext .= "Meta Description: " . ($post['meta_description'] ?? 'Empty') . "\n\n";
+        
+        if (!empty($post['sections'])) {
+            $postContext .= "SECTIONS:\n";
+            foreach ($post['sections'] as $i => $section) {
+                $postContext .= "Section " . ($i + 1) . " (index: {$i}):\n";
+                $postContext .= "  Heading: " . ($section['heading'] ?? 'Empty') . "\n";
+                $postContext .= "  Content: " . ($section['content'] ?? 'Empty') . "\n";
+                $postContext .= "  CTA: " . ($section['cta_text'] ?? '') . " -> " . ($section['cta_url'] ?? '') . "\n";
+                $postContext .= "  Carousel Brand ID: " . ($section['carousel_brand_id'] ?? 'None') . "\n";
+                $postContext .= "  Carousel Category ID: " . ($section['carousel_category_id'] ?? 'None') . "\n\n";
+            }
+        }
+        
+        $systemPrompt = <<<PROMPT
+You are an AI assistant helping refine a blog post for Black White Denim, a UK premium fashion retailer.
+
+{$brandVoice}
+{$writingGuidelines}
+
+The user will ask you to make changes to their post. You should:
+1. Understand what they want to change
+2. Make the requested changes while maintaining the brand voice
+3. Return a JSON response with your message and any updates
+
+RESPONSE FORMAT - You MUST return valid JSON only:
+{
+    "message": "A friendly explanation of what you changed",
+    "updates": {
+        "title": "New title if changed",
+        "intro_content": "New intro if changed",
+        "outro_content": "New outro if changed",
+        "meta_description": "New meta if changed",
+        "sections": [
+            {
+                "index": 0,
+                "heading": "New heading if changed",
+                "content": "New content if changed",
+                "cta_text": "New CTA text if changed",
+                "cta_url": "New CTA URL if changed",
+                "carousel_brand_id": null,
+                "carousel_category_id": null
+            }
+        ]
+    }
+}
+
+RULES:
+- Only include fields in "updates" that you actually changed
+- If no changes needed, set "updates" to null
+- Section updates must include "index" (0-based)
+- To remove a carousel, set carousel_brand_id and carousel_category_id to null
+- Keep content concise and on-brand
+- Use British English spelling
+- Be conversational in your message
+PROMPT;
+
+        // Build conversation history
+        $messages = [];
+        foreach ($history as $msg) {
+            if ($msg['role'] === 'user') {
+                $messages[] = ['role' => 'user', 'content' => $msg['content']];
+            } else {
+                $messages[] = ['role' => 'assistant', 'content' => $msg['content']];
+            }
+        }
+        
+        // Add current request with post context
+        $userMessage = "{$postContext}\n\nUSER REQUEST: {$message}";
+        $messages[] = ['role' => 'user', 'content' => $userMessage];
+        
+        // Call Claude API
+        $response = $this->callApiWithMessages($systemPrompt, $messages);
+        
+        // Parse JSON response
+        $result = $this->parseJsonResponse($response);
+        
+        if (empty($result)) {
+            return [
+                'message' => $response, // Return raw response if JSON parsing fails
+                'updates' => null
+            ];
+        }
+        
+        return [
+            'message' => $result['message'] ?? 'Changes applied.',
+            'updates' => $result['updates'] ?? null
+        ];
+    }
+    
+    /**
+     * Call Claude API with message history
+     */
+    private function callApiWithMessages(string $systemPrompt, array $messages): string
+    {
+        $apiKey = getenv('CLAUDE_API_KEY');
+        
+        if (!$apiKey) {
+            throw new \Exception('Claude API key not configured');
+        }
+        
+        $payload = [
+            'model' => 'claude-sonnet-4-20250514',
+            'max_tokens' => 4096,
+            'system' => $systemPrompt,
+            'messages' => $messages
+        ];
+        
+        $ch = curl_init('https://api.anthropic.com/v1/messages');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'x-api-key: ' . $apiKey,
+                'anthropic-version: 2023-06-01'
+            ],
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_TIMEOUT => 60
+        ]);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode !== 200) {
+            error_log("Claude API error: HTTP {$httpCode} - {$response}");
+            throw new \Exception("Claude API error: HTTP {$httpCode}");
+        }
+        
+        $data = json_decode($response, true);
+        
+        if (!isset($data['content'][0]['text'])) {
+            error_log("Unexpected Claude API response: " . $response);
+            throw new \Exception('Unexpected API response format');
+        }
+        
+        return $data['content'][0]['text'];
     }
 }

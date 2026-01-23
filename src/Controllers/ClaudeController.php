@@ -348,4 +348,27 @@ class ClaudeController
             error_log("Failed to log activity: " . $e->getMessage());
         }
     }
+        /**
+     * AI Assistant for refining a specific post
+     */
+    public function postAssistant(array $input): void
+    {
+        try {
+            $service = new \App\Services\ClaudeService($this->config);
+            $result = $service->postAssistant($input);
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $result
+            ]);
+            
+        } catch (\Exception $e) {
+            error_log("Post assistant error: " . $e->getMessage());
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
+    }
 }
