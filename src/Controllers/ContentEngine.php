@@ -79,8 +79,8 @@ class ContentEngine
         // 1. Get seasonal events in date range
         $events = Database::query(
             "SELECT * FROM seasonal_events 
-             WHERE event_date BETWEEN ? AND ? AND is_active = 1
-             ORDER BY event_date",
+             WHERE start_date BETWEEN ? AND ? AND is_active = 1
+             ORDER BY start_date",
             [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')]
         );
         
@@ -99,7 +99,7 @@ class ContentEngine
                 );
                 
                 if (!$existing) {
-                    $publishDate = (new \DateTime($event['event_date']))
+                    $publishDate = (new \DateTime($event['start_date']))
                         ->modify("-{$template['lead_days']} days");
                     
                     // Only create if publish date is in the future
@@ -168,7 +168,7 @@ class ContentEngine
         // Get pending items that should be generated (target date within 21 days)
         $pending = Database::query(
             "SELECT sc.*, ct.name as template_name, ct.content_type, ct.prompt_template,
-                    se.name as event_name, se.event_date
+                    se.name as event_name, se.start_date as event_date
              FROM scheduled_content sc
              JOIN content_templates ct ON sc.template_id = ct.id
              LEFT JOIN seasonal_events se ON sc.event_id = se.id
@@ -403,38 +403,41 @@ class ContentEngine
         $year = (int)date('Y');
         $nextYear = $year + 1;
         
+        // Format: [name, start_date, end_date, event_type, priority (1-10, 10=highest)]
         $events = [
             // 2026 events
-            ['Valentine\'s Day', "{$year}-02-14", 'seasonal', 'high'],
-            ['Mother\'s Day UK', "{$year}-03-30", 'seasonal', 'high'],
-            ['Easter', "{$year}-04-20", 'seasonal', 'medium'],
-            ['Spring Sale', "{$year}-04-01", 'sale', 'high'],
-            ['Father\'s Day UK', "{$year}-06-15", 'seasonal', 'high'],
-            ['Summer Sale', "{$year}-07-01", 'sale', 'critical'],
-            ['Back to School', "{$year}-09-01", 'seasonal', 'medium'],
-            ['Autumn Collection', "{$year}-09-15", 'seasonal', 'medium'],
-            ['Black Friday', "{$year}-11-28", 'sale', 'critical'],
-            ['Cyber Monday', "{$year}-12-01", 'sale', 'critical'],
-            ['Christmas Gift Guide', "{$year}-12-01", 'seasonal', 'critical'],
-            ['Christmas', "{$year}-12-25", 'seasonal', 'critical'],
-            ['Boxing Day Sale', "{$year}-12-26", 'sale', 'high'],
+            ['Valentine\'s Day', "{$year}-02-14", "{$year}-02-14", 'seasonal', 8],
+            ['Mother\'s Day UK', "{$year}-03-30", "{$year}-03-30", 'seasonal', 8],
+            ['Easter', "{$year}-04-20", "{$year}-04-21", 'seasonal', 6],
+            ['Spring Sale', "{$year}-04-01", "{$year}-04-14", 'sale', 8],
+            ['Father\'s Day UK', "{$year}-06-15", "{$year}-06-15", 'seasonal', 8],
+            ['Summer Sale', "{$year}-07-01", "{$year}-07-31", 'sale', 10],
+            ['Back to School', "{$year}-09-01", "{$year}-09-14", 'seasonal', 6],
+            ['Autumn Collection', "{$year}-09-15", "{$year}-09-30", 'seasonal', 6],
+            ['Black Friday', "{$year}-11-28", "{$year}-11-30", 'sale', 10],
+            ['Cyber Monday', "{$year}-12-01", "{$year}-12-01", 'sale', 10],
+            ['Christmas Gift Guide', "{$year}-12-01", "{$year}-12-20", 'seasonal', 10],
+            ['Christmas', "{$year}-12-25", "{$year}-12-25", 'seasonal', 10],
+            ['Boxing Day Sale', "{$year}-12-26", "{$year}-12-31", 'sale', 8],
             // 2027 events
-            ['New Year Sale', "{$nextYear}-01-01", 'sale', 'high'],
-            ['Valentine\'s Day', "{$nextYear}-02-14", 'seasonal', 'high'],
+            ['New Year Sale', "{$nextYear}-01-01", "{$nextYear}-01-14", 'sale', 8],
+            ['Valentine\'s Day {$nextYear}', "{$nextYear}-02-14", "{$nextYear}-02-14", 'seasonal', 8],
         ];
         
         $created = 0;
         foreach ($events as $event) {
+            $slug = $this->slugify($event[0] . '-' . substr($event[1], 0, 4));
+            
             $existing = Database::queryOne(
-                "SELECT id FROM seasonal_events WHERE name = ? AND event_date = ?",
-                [$event[0], $event[1]]
+                "SELECT id FROM seasonal_events WHERE slug = ?",
+                [$slug]
             );
             
             if (!$existing) {
                 Database::insert(
-                    "INSERT INTO seasonal_events (name, event_date, event_type, priority, is_active, created_at)
-                     VALUES (?, ?, ?, ?, 1, NOW())",
-                    [$event[0], $event[1], $event[2], $event[3]]
+                    "INSERT INTO seasonal_events (name, slug, start_date, end_date, event_type, priority, is_active, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, 1, NOW())",
+                    [$event[0], $slug, $event[1], $event[2], $event[3], $event[4]]
                 );
                 $created++;
             }
@@ -444,6 +447,17 @@ class ContentEngine
             'success' => true,
             'data' => ['created' => $created, 'message' => "Created {$created} seasonal events"]
         ]);
+    }
+    
+    /**
+     * Generate slug from string
+     */
+    private function slugify(string $text): string
+    {
+        $slug = strtolower($text);
+        $slug = preg_replace('/[^a-z0-9\s-]/', '', $slug);
+        $slug = preg_replace('/[\s-]+/', '-', $slug);
+        return trim($slug, '-');
     }
 
     /**
