@@ -41,21 +41,15 @@ class SettingsController
     }
     
     /**
-     * Get brand voice settings
+     * Get brand voice settings from brand_voice table
      */
     public function brandVoice(): void
     {
-        $settings = Database::query(
-            "SELECT setting_key, setting_value FROM app_settings WHERE setting_key LIKE 'brand_voice_%'"
+        $voice = Database::query(
+            "SELECT id, attribute, description, examples, weight, is_active FROM brand_voice ORDER BY weight DESC"
         );
         
-        $result = [];
-        foreach ($settings as $s) {
-            $key = str_replace('brand_voice_', '', $s['setting_key']);
-            $result[$key] = $s['setting_value'];
-        }
-        
-        echo json_encode(['success' => true, 'data' => $result]);
+        echo json_encode(['success' => true, 'data' => $voice]);
     }
     
     /**
@@ -63,8 +57,19 @@ class SettingsController
      */
     public function updateBrandVoice(array $input): void
     {
-        foreach ($input as $key => $value) {
-            $this->upsertSetting('brand_voice_' . $key, $value);
+        // Handle updates to brand_voice table
+        if (!empty($input['id'])) {
+            Database::execute(
+                "UPDATE brand_voice SET attribute = ?, description = ?, examples = ?, weight = ?, is_active = ? WHERE id = ?",
+                [
+                    $input['attribute'] ?? '',
+                    $input['description'] ?? '',
+                    $input['examples'] ?? '[]',
+                    $input['weight'] ?? 5,
+                    $input['is_active'] ?? 1,
+                    $input['id']
+                ]
+            );
         }
         
         echo json_encode(['success' => true, 'message' => 'Brand voice saved']);
