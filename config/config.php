@@ -67,7 +67,7 @@ return [
     // Claude API
     'claude' => [
         'api_key' => env('CLAUDE_API_KEY'),
-        'model' => 'claude-sonnet-4-20250514',
+        'model' => 'claude-sonnet-4-5-20250929',
         'max_tokens' => 4096,
     ],
     
