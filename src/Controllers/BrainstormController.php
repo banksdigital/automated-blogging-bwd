@@ -145,7 +145,7 @@ class BrainstormController
             // Create a new post from the idea
             $postId = Database::insert(
                 "INSERT INTO posts (title, intro_content, status, created_at, updated_at) 
-                 VALUES (?, ?, 'idea', NOW(), NOW())",
+                 VALUES (?, ?, 'draft', NOW(), NOW())",
                 [
                     $idea['title'],
                     $idea['description'] ?? ''
