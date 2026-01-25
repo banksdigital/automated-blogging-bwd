@@ -2126,10 +2126,14 @@ const Claude = {
             changesMade.push('Meta description');
         }
         
-        if (updates.sections !== undefined) {
+        if (updates.sections !== undefined && Array.isArray(updates.sections)) {
+            const sectionsContainer = document.getElementById('sections-container');
+            
             updates.sections.forEach(sectionUpdate => {
                 const sectionEl = document.querySelector(`.section-item[data-index="${sectionUpdate.index}"]`);
+                
                 if (sectionEl) {
+                    // Update existing section
                     if (sectionUpdate.heading !== undefined) {
                         sectionEl.querySelector('.section-heading').value = sectionUpdate.heading;
                     }
@@ -2148,7 +2152,26 @@ const Claude = {
                     if (sectionUpdate.carousel_category_id !== undefined) {
                         sectionEl.querySelector('.section-carousel-category').value = sectionUpdate.carousel_category_id || '';
                     }
-                    changesMade.push(`Section ${sectionUpdate.index + 1}`);
+                    changesMade.push(`Section ${sectionUpdate.index + 1} updated`);
+                } else if (sectionsContainer) {
+                    // Create new section
+                    const newSection = {
+                        heading: sectionUpdate.heading || '',
+                        content: sectionUpdate.content || '',
+                        cta_text: sectionUpdate.cta_text || '',
+                        cta_url: sectionUpdate.cta_url || '',
+                        carousel_brand_id: sectionUpdate.carousel_brand_id || null,
+                        carousel_category_id: sectionUpdate.carousel_category_id || null
+                    };
+                    
+                    // Get current section count
+                    const existingSections = sectionsContainer.querySelectorAll('.section-item').length;
+                    const newIndex = sectionUpdate.index !== undefined ? sectionUpdate.index : existingSections;
+                    
+                    // Render new section using App's renderSection
+                    const sectionHtml = App.renderSection(newSection, newIndex);
+                    sectionsContainer.insertAdjacentHTML('beforeend', sectionHtml);
+                    changesMade.push(`Section ${newIndex + 1} created`);
                 }
             });
         }

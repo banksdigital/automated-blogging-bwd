@@ -122,7 +122,7 @@ class BrainstormController
     }
 
     /**
-     * Convert a brainstorm idea to a draft post
+     * Convert a brainstorm idea to a full draft post with AI-generated content
      */
     public function convert(int $id): void
     {
@@ -142,20 +142,60 @@ class BrainstormController
                 return;
             }
             
-            // Create a new post from the idea
-            $postId = Database::insert(
-                "INSERT INTO posts (title, intro_content, status, created_at, updated_at) 
-                 VALUES (?, ?, 'draft', NOW(), NOW())",
-                [
-                    $idea['title'],
-                    $idea['description'] ?? ''
-                ]
-            );
+            // Generate full post content using Claude
+            $claudeService = new \App\Services\ClaudeService($this->config);
             
-            // Optionally delete the idea after converting
-            // Database::execute("DELETE FROM brainstorm_ideas WHERE id = ?", [$id]);
+            // Build prompt from the idea
+            $prompt = $idea['title'];
+            if (!empty($idea['description'])) {
+                $prompt .= "\n\nContext: " . $idea['description'];
+            }
             
-            // Mark idea as converted instead
+            // Generate the full blog post
+            $content = $claudeService->generateBlogPost(['prompt' => $prompt]);
+            
+            if (empty($content) || empty($content['title'])) {
+                // Fallback: create basic post if generation fails
+                $postId = Database::insert(
+                    "INSERT INTO posts (title, intro_content, status, created_at, updated_at) 
+                     VALUES (?, ?, 'draft', NOW(), NOW())",
+                    [$idea['title'], $idea['description'] ?? '']
+                );
+            } else {
+                // Create full post with generated content
+                $postId = Database::insert(
+                    "INSERT INTO posts (title, intro_content, outro_content, meta_description, status, created_at, updated_at) 
+                     VALUES (?, ?, ?, ?, 'draft', NOW(), NOW())",
+                    [
+                        $content['title'] ?? $idea['title'],
+                        $content['intro'] ?? '',
+                        $content['outro'] ?? '',
+                        $content['meta_description'] ?? ''
+                    ]
+                );
+                
+                // Create sections with carousels
+                if (!empty($content['sections']) && is_array($content['sections'])) {
+                    foreach ($content['sections'] as $index => $section) {
+                        Database::insert(
+                            "INSERT INTO post_sections (post_id, section_index, heading, content, cta_text, cta_url, carousel_brand_id, carousel_category_id) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            [
+                                $postId,
+                                $index,
+                                $section['heading'] ?? '',
+                                $section['content'] ?? '',
+                                $section['cta_text'] ?? '',
+                                $section['cta_url'] ?? '',
+                                $section['carousel_brand_id'] ?? null,
+                                $section['carousel_category_id'] ?? null
+                            ]
+                        );
+                    }
+                }
+            }
+            
+            // Mark idea as converted
             Database::execute(
                 "UPDATE brainstorm_ideas SET converted_post_id = ? WHERE id = ?",
                 [$postId, $id]
@@ -165,7 +205,7 @@ class BrainstormController
                 'success' => true,
                 'data' => [
                     'post_id' => $postId,
-                    'message' => 'Idea converted to post'
+                    'message' => 'Idea converted to full post'
                 ]
             ]);
             

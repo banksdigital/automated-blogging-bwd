@@ -580,6 +580,26 @@ PROMPT;
                 $postContext .= "  Carousel Brand ID: " . ($section['carousel_brand_id'] ?? 'None') . "\n";
                 $postContext .= "  Carousel Category ID: " . ($section['carousel_category_id'] ?? 'None') . "\n\n";
             }
+        } else {
+            $postContext .= "SECTIONS: None (post has no sections yet)\n\n";
+        }
+        
+        // Get valid brand/category combinations for carousel suggestions
+        $validCombos = Database::query(
+            "SELECT b.wp_term_id as brand_id, b.name as brand_name, pc.wp_term_id as category_id, pc.name as category_name
+             FROM wp_brands b
+             JOIN wp_products p ON p.brand_id = b.id
+             JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
+             WHERE p.stock_status = 'instock' AND pc.parent_id = 0
+             GROUP BY b.wp_term_id, pc.wp_term_id
+             HAVING COUNT(*) >= 3
+             ORDER BY b.name, pc.name
+             LIMIT 50"
+        );
+        
+        $comboList = "VALID BRAND+CATEGORY COMBINATIONS FOR CAROUSELS:\n";
+        foreach ($validCombos as $combo) {
+            $comboList .= "- {$combo['brand_name']} (ID:{$combo['brand_id']}) + {$combo['category_name']} (ID:{$combo['category_id']})\n";
         }
         
         $systemPrompt = <<<PROMPT
@@ -588,10 +608,12 @@ You are an AI assistant helping refine a blog post for Black White Denim, a UK p
 {$brandVoice}
 {$writingGuidelines}
 
-The user will ask you to make changes to their post. You should:
-1. Understand what they want to change
-2. Make the requested changes while maintaining the brand voice
-3. Return a JSON response with your message and any updates
+{$comboList}
+
+The user will ask you to make changes to their post. You can:
+1. Update existing content (title, intro, outro, meta, sections)
+2. CREATE NEW SECTIONS if the post has none or needs more
+3. Add carousels to sections using valid brand/category IDs from the list above
 
 RESPONSE FORMAT - You MUST return valid JSON only:
 {
@@ -600,28 +622,31 @@ RESPONSE FORMAT - You MUST return valid JSON only:
         "title": "New title if changed",
         "intro_content": "New intro if changed",
         "outro_content": "New outro if changed",
-        "meta_description": "New meta if changed",
+        "meta_description": "New meta description (150-160 chars) if changed",
         "sections": [
             {
                 "index": 0,
-                "heading": "New heading if changed",
-                "content": "New content if changed",
-                "cta_text": "New CTA text if changed",
-                "cta_url": "New CTA URL if changed",
-                "carousel_brand_id": null,
-                "carousel_category_id": null
+                "heading": "Section heading",
+                "content": "Section content (100-150 words)",
+                "cta_text": "Shop Now",
+                "cta_url": "/brand/brand-slug/",
+                "carousel_brand_id": 123,
+                "carousel_category_id": 456
             }
         ]
     }
 }
 
 RULES:
-- Only include fields in "updates" that you actually changed
+- Only include fields in "updates" that you actually changed or created
 - If no changes needed, set "updates" to null
-- Section updates must include "index" (0-based)
+- To CREATE NEW SECTIONS: use index 0, 1, 2, etc. in order
 - To remove a carousel, set carousel_brand_id and carousel_category_id to null
+- Carousel IDs MUST come from the valid combinations list above
+- Each section should be 100-150 words
 - Keep content concise and on-brand
 - ALWAYS use British English spelling (colour, favourite, accessorise, centre, organised, realise, jewellery, travelling)
+- CTA URLs should use /brand/brand-slug/ format
 - Be conversational in your message
 PROMPT;
 
