@@ -348,5 +348,23 @@
             }
         };
     </script>
+    <!-- Claude AI Assistant Panel -->
+<div id="claude-panel" style="position:fixed;top:0;right:-400px;width:400px;height:100vh;background:var(--bg-secondary);border-left:1px solid var(--border-default);z-index:1001;transition:right 0.3s ease;display:flex;flex-direction:column;">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border-default);display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-weight:600;">Claude Assistant</span>
+        <button onclick="Claude.close()" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:20px;">&times;</button>
+    </div>
+    <div id="claude-messages" style="flex:1;overflow-y:auto;padding:20px;"></div>
+    <div style="padding:16px 20px;border-top:1px solid var(--border-default);">
+        <div style="display:flex;gap:8px;">
+            <input type="text" id="claude-input" class="form-input" placeholder="Ask Claude to refine your post..." onkeypress="if(event.key==='Enter')Claude.send(this.value)" style="flex:1;">
+            <button id="claude-send" class="btn btn-primary" onclick="Claude.send(document.getElementById('claude-input').value)">Send</button>
+        </div>
+    </div>
+</div>
+
+<style>
+#claude-panel.open { right: 0; }
+</style>
 </body>
 </html>
