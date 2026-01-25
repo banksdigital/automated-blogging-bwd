@@ -1238,7 +1238,7 @@ const App = {
                                         <div style="font-weight:500;">${this.escapeHtml(idea.title)}</div>
                                         <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">${this.escapeHtml(idea.description || '')}</div>
                                     </div>
-                                    <button class="btn btn-sm btn-secondary" onclick="App.convertIdea(${idea.id})">Convert to Post</button>
+                                    <button class="btn btn-sm btn-primary" onclick="App.convertIdea(${idea.id}, this)">🚀 Generate Post</button>
                                 </div>
                             </div>
                         `).join('') : '<p style="text-align:center;color:var(--text-secondary);padding:20px;">No ideas saved yet. Use AI brainstorm or add manually.</p>'}
@@ -1311,13 +1311,44 @@ const App = {
         }
     },
     
-    async convertIdea(id) {
+    async convertIdea(id, buttonEl) {
+        // Show loading state
+        const originalText = buttonEl ? buttonEl.innerHTML : '';
+        if (buttonEl) {
+            buttonEl.disabled = true;
+            buttonEl.innerHTML = '⏳ Generating...';
+        }
+        
+        // Show full-screen loading overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'convert-loading-overlay';
+        overlay.innerHTML = `
+            <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;">
+                <div style="background:var(--bg-card);padding:40px 60px;border-radius:8px;text-align:center;">
+                    <div class="spinner" style="margin:0 auto 20px;"></div>
+                    <div style="font-size:18px;font-weight:600;margin-bottom:8px;">Generating Full Post</div>
+                    <div style="color:var(--text-secondary);font-size:14px;">Claude is creating intro, sections, carousels & meta description...</div>
+                    <div style="color:var(--text-muted);font-size:12px;margin-top:12px;">This may take 15-30 seconds</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        
         try {
             const result = await this.api(`/brainstorm/${id}/convert`, { method: 'POST' });
-            this.toast('Converted to post!');
+            this.toast('Post generated successfully!', 'success');
             this.navigate(`/posts/${result.post_id}`);
         } catch (error) {
             this.toast(error.message, 'error');
+            // Restore button
+            if (buttonEl) {
+                buttonEl.disabled = false;
+                buttonEl.innerHTML = originalText;
+            }
+        } finally {
+            // Remove overlay
+            const existingOverlay = document.getElementById('convert-loading-overlay');
+            if (existingOverlay) existingOverlay.remove();
         }
     },
 
@@ -1976,7 +2007,21 @@ const App = {
             return;
         }
         
-        this.toast('Generating content...');
+        // Show loading overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'generate-loading-overlay';
+        overlay.innerHTML = `
+            <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;">
+                <div style="background:var(--bg-card);padding:40px 60px;border-radius:8px;text-align:center;">
+                    <div class="spinner" style="margin:0 auto 20px;"></div>
+                    <div style="font-size:18px;font-weight:600;margin-bottom:8px;">Generating Content</div>
+                    <div style="color:var(--text-secondary);font-size:14px;">Claude is writing your blog post...</div>
+                    <div style="color:var(--text-muted);font-size:12px;margin-top:12px;">This may take 15-30 seconds</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        
         try {
             const result = await this.api('/claude/generate-post', { 
                 method: 'POST', 
@@ -1998,9 +2043,12 @@ const App = {
                 });
             }
             
-            this.toast('Content generated!');
+            this.toast('Content generated!', 'success');
         } catch (error) {
             this.toast(error.message, 'error');
+        } finally {
+            const existingOverlay = document.getElementById('generate-loading-overlay');
+            if (existingOverlay) existingOverlay.remove();
         }
     },
     
@@ -2223,7 +2271,13 @@ const Claude = {
         
         document.getElementById('claude-input').value = '';
         document.getElementById('claude-send').disabled = true;
-        document.getElementById('claude-send').textContent = '...';
+        document.getElementById('claude-send').textContent = '⏳';
+        document.getElementById('claude-input').disabled = true;
+        document.getElementById('claude-input').placeholder = 'Claude is thinking...';
+        
+        // Add typing indicator
+        this.messages.push({ role: 'assistant', content: 'typing', isTyping: true });
+        this.renderMessages();
         
         try {
             const postState = this.getCurrentPostState();
@@ -2233,9 +2287,12 @@ const Claude = {
                 body: { 
                     message,
                     post: postState,
-                    history: this.messages.slice(-10) // Send last 10 messages for context
+                    history: this.messages.filter(m => !m.isTyping).slice(-10)
                 } 
             });
+            
+            // Remove typing indicator
+            this.messages = this.messages.filter(m => !m.isTyping);
             
             // Apply any updates Claude suggested
             if (response.updates) {
@@ -2259,12 +2316,17 @@ const Claude = {
             this.renderMessages();
             
         } catch (error) {
+            // Remove typing indicator
+            this.messages = this.messages.filter(m => !m.isTyping);
+            
             App.toast(error.message, 'error');
             this.messages.push({ role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' });
             this.renderMessages();
         } finally {
             document.getElementById('claude-send').disabled = false;
             document.getElementById('claude-send').textContent = 'Send';
+            document.getElementById('claude-input').disabled = false;
+            document.getElementById('claude-input').placeholder = 'Ask Claude to refine your post...';
         }
     },
     
@@ -2272,11 +2334,45 @@ const Claude = {
         const container = document.getElementById('claude-messages');
         if (!container) return;
         
-        container.innerHTML = this.messages.map(msg => `
-            <div class="claude-message claude-message-${msg.role}" style="margin-bottom:16px;padding:12px;${msg.role === 'user' ? 'background:var(--bg-tertiary);margin-left:40px;' : 'background:var(--bg-secondary);border-left:2px solid var(--text-primary);'}">
-                ${App.escapeHtml(msg.content).replace(/\n/g, '<br>')}
-            </div>
-        `).join('');
+        // Ensure typing animation CSS exists
+        if (!document.getElementById('typing-animation-css')) {
+            const style = document.createElement('style');
+            style.id = 'typing-animation-css';
+            style.textContent = `
+                @keyframes typingDot {
+                    0%, 60%, 100% { opacity: 0.2; transform: scale(0.8); }
+                    30% { opacity: 1; transform: scale(1); }
+                }
+                .typing-dots span {
+                    display: inline-block;
+                    color: var(--text-primary);
+                    font-size: 14px;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        
+        container.innerHTML = this.messages.map(msg => {
+            if (msg.isTyping) {
+                return `
+                    <div class="claude-message claude-message-assistant" style="margin-bottom:16px;padding:12px;background:var(--bg-secondary);border-left:2px solid var(--text-primary);">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <div class="typing-dots">
+                                <span style="animation:typingDot 1.4s infinite;animation-delay:0s;">●</span>
+                                <span style="animation:typingDot 1.4s infinite;animation-delay:0.2s;">●</span>
+                                <span style="animation:typingDot 1.4s infinite;animation-delay:0.4s;">●</span>
+                            </div>
+                            <span style="color:var(--text-muted);font-size:13px;">Claude is thinking...</span>
+                        </div>
+                    </div>
+                `;
+            }
+            return `
+                <div class="claude-message claude-message-${msg.role}" style="margin-bottom:16px;padding:12px;${msg.role === 'user' ? 'background:var(--bg-tertiary);margin-left:40px;' : 'background:var(--bg-secondary);border-left:2px solid var(--text-primary);'}">
+                    ${App.escapeHtml(msg.content).replace(/\n/g, '<br>')}
+                </div>
+            `;
+        }).join('');
         container.scrollTop = container.scrollHeight;
     },
     
