@@ -361,26 +361,57 @@ PROMPT;
      */
     public function brainstorm(array $params): array
     {
-        $topic = $params['topic'] ?? 'fashion content';
+        $topic = $params['prompt'] ?? $params['topic'] ?? 'fashion content';
         $count = $params['count'] ?? 5;
+        $seasonalContext = $params['seasonal_context'] ?? null;
         $brandVoice = $this->getBrandVoice();
         
-        $systemPrompt = "You are a creative content strategist for a UK premium fashion retailer.";
+        // Get actual brands from BWD
+        $brands = Database::query(
+            "SELECT name FROM wp_brands WHERE count > 0 ORDER BY count DESC LIMIT 30"
+        );
+        $brandList = implode(', ', array_column($brands, 'name'));
+        
+        // Get actual categories from BWD
+        $categories = Database::query(
+            "SELECT name FROM wp_product_categories WHERE count > 0 AND parent_id = 0 ORDER BY count DESC LIMIT 20"
+        );
+        $categoryList = implode(', ', array_column($categories, 'name'));
+        
+        // Get upcoming seasonal events
+        $events = Database::query(
+            "SELECT name, start_date FROM seasonal_events 
+             WHERE start_date >= CURDATE() AND start_date <= DATE_ADD(CURDATE(), INTERVAL 3 MONTH)
+             ORDER BY start_date LIMIT 5"
+        );
+        $eventList = !empty($events) ? implode(', ', array_column($events, 'name')) : 'No upcoming events';
+        
+        $systemPrompt = "You are a creative content strategist for Black White Denim, a UK premium fashion retailer.";
         
         $userPrompt = <<<PROMPT
 Generate {$count} blog post ideas related to: {$topic}
 
-Brand context: {$brandVoice}
+BLACK WHITE DENIM CONTEXT:
+- Brands we stock: {$brandList}
+- Product categories: {$categoryList}
+- Upcoming events/seasons: {$eventList}
+{$seasonalContext}
+
+Brand voice: {$brandVoice}
+
+IMPORTANT: Ideas MUST feature brands and products that Black White Denim actually stocks (listed above). 
+Be specific - mention actual brand names and product types we sell.
 
 For each idea, provide:
 {
     "ideas": [
         {
             "title": "Suggested blog title",
-            "description": "Brief description of the post (1-2 sentences)",
-            "content_type": "gift-guide|style-guide|trend-report|brand-spotlight|new-arrivals|curated-edit",
+            "description": "Brief description mentioning specific brands/products we stock",
+            "content_type": "gift-guide|style-guide|trend-report|brand-spotlight|new-arrivals|seasonal",
             "target_audience": "Who this post is for",
-            "estimated_products": 5-10
+            "suggested_brands": ["Brand1", "Brand2"],
+            "suggested_categories": ["Category1", "Category2"]
         }
     ]
 }

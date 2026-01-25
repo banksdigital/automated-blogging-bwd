@@ -1271,13 +1271,29 @@ const App = {
             
             results.innerHTML = ideas.map(idea => `
                 <div style="padding:16px;border:1px solid var(--border-default);margin-bottom:12px;">
-                    <div style="font-weight:500;">${this.escapeHtml(idea.title)}</div>
-                    <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">${this.escapeHtml(idea.description || '')}</div>
-                    <div style="display:flex;gap:8px;margin-top:12px;">
-                        ${idea.content_type ? `<span style="font-size:11px;padding:4px 8px;background:var(--bg-tertiary);">${this.escapeHtml(idea.content_type)}</span>` : ''}
+                    <div style="font-weight:600;font-size:15px;">${this.escapeHtml(idea.title)}</div>
+                    <div style="font-size:13px;color:var(--text-secondary);margin-top:8px;">${this.escapeHtml(idea.description || '')}</div>
+                    
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+                        ${idea.content_type ? `<span style="font-size:11px;padding:4px 8px;background:var(--status-scheduled);color:white;border-radius:2px;">${this.escapeHtml(idea.content_type)}</span>` : ''}
                         ${idea.target_audience ? `<span style="font-size:11px;padding:4px 8px;background:var(--bg-tertiary);">🎯 ${this.escapeHtml(idea.target_audience)}</span>` : ''}
                     </div>
-                    <button class="btn btn-sm btn-secondary" style="margin-top:12px;" onclick="App.saveIdea(\`${this.escapeHtml(idea.title).replace(/`/g, '\\`')}\`, \`${this.escapeHtml(idea.description || '').replace(/`/g, '\\`')}\`)">💾 Save Idea</button>
+                    
+                    ${idea.suggested_brands?.length ? `
+                        <div style="margin-top:12px;">
+                            <span style="font-size:11px;color:var(--text-muted);">Suggested brands:</span>
+                            <span style="font-size:12px;margin-left:4px;">${idea.suggested_brands.map(b => this.escapeHtml(b)).join(', ')}</span>
+                        </div>
+                    ` : ''}
+                    
+                    ${idea.suggested_categories?.length ? `
+                        <div style="margin-top:4px;">
+                            <span style="font-size:11px;color:var(--text-muted);">Categories:</span>
+                            <span style="font-size:12px;margin-left:4px;">${idea.suggested_categories.map(c => this.escapeHtml(c)).join(', ')}</span>
+                        </div>
+                    ` : ''}
+                    
+                    <button class="btn btn-sm btn-primary" style="margin-top:12px;" onclick="App.saveIdea(\`${this.escapeHtml(idea.title).replace(/`/g, '\\`')}\`, \`${this.escapeHtml(idea.description || '').replace(/`/g, '\\`')}\`)">💾 Save Idea</button>
                 </div>
             `).join('');
         } catch (error) {
