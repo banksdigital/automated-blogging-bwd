@@ -105,8 +105,18 @@ Writing Style:
 - Warm, knowledgeable, and inspiring
 - Fashion-forward but accessible
 - Never pushy or salesy
-- Use British English spelling
+- ALWAYS use British English spelling (colour, favourite, accessorise, centre, organised, realise, etc.)
 - Write like a stylish friend giving advice, not a corporate copywriter
+
+BRITISH ENGLISH IS MANDATORY - Examples:
+- colour NOT color
+- favourite NOT favorite  
+- accessorise NOT accessorize
+- centre NOT center
+- organised NOT organized
+- realise NOT realize
+- travelling NOT traveling
+- jewellery NOT jewelry
 
 Format Requirements:
 - Create engaging, SEO-friendly content
@@ -252,12 +262,14 @@ PROMPT;
     {
         $brandVoice = $this->getBrandVoice();
         
-        $systemPrompt = "You are a content writer for Black White Denim, a UK premium fashion retailer. {$brandVoice}";
+        $systemPrompt = "You are a content writer for Black White Denim, a UK premium fashion retailer. ALWAYS use British English spelling (colour, favourite, accessorise, centre, organised, realise, jewellery). {$brandVoice}";
         
         $userPrompt = <<<PROMPT
 Write a blog section about: {$params['topic']}
 
 Context: {$params['context']}
+
+IMPORTANT: Use British English spelling throughout (accessorise NOT accessorize, colour NOT color, etc.)
 
 Return JSON:
 {
@@ -279,7 +291,7 @@ PROMPT;
      */
     public function generateMetaDescription(string $title, string $content): string
     {
-        $systemPrompt = "You are an SEO specialist. Generate concise, compelling meta descriptions.";
+        $systemPrompt = "You are an SEO specialist for a UK fashion retailer. ALWAYS use British English spelling.";
         
         $userPrompt = <<<PROMPT
 Generate a meta description for this blog post:
@@ -290,7 +302,7 @@ Requirements:
 - Exactly 150-155 characters
 - Include relevant keywords naturally
 - Compelling and click-worthy
-- British English
+- MUST use British English spelling (colour, favourite, accessorise, centre, organised)
 
 Return ONLY the meta description text, nothing else.
 PROMPT;
@@ -386,7 +398,7 @@ PROMPT;
         );
         $eventList = !empty($events) ? implode(', ', array_column($events, 'name')) : 'No upcoming events';
         
-        $systemPrompt = "You are a creative content strategist for Black White Denim, a UK premium fashion retailer.";
+        $systemPrompt = "You are a creative content strategist for Black White Denim, a UK premium fashion retailer. ALWAYS use British English spelling (e.g., colour, favourites, accessorise, centre, organised).";
         
         $userPrompt = <<<PROMPT
 Generate {$count} blog post ideas related to: {$topic}
@@ -399,8 +411,10 @@ BLACK WHITE DENIM CONTEXT:
 
 Brand voice: {$brandVoice}
 
-IMPORTANT: Ideas MUST feature brands and products that Black White Denim actually stocks (listed above). 
-Be specific - mention actual brand names and product types we sell.
+IMPORTANT RULES:
+1. Ideas MUST feature brands and products that Black White Denim actually stocks (listed above)
+2. Be specific - mention actual brand names and product types we sell
+3. ALWAYS use British English spelling (colour NOT color, favourite NOT favorite, accessorise NOT accessorize, centre NOT center, organised NOT organized, etc.)
 
 For each idea, provide:
 {
@@ -431,7 +445,7 @@ PROMPT;
         $brandVoice = $this->getBrandVoice();
         
         $systemPrompt = <<<PROMPT
-You are a helpful AI assistant for Black White Denim's blog platform. You help with:
+You are a helpful AI assistant for Black White Denim's blog platform (UK-based). You help with:
 - Content ideas and strategy
 - Writing and editing blog posts
 - Product selection and merchandising
@@ -440,6 +454,7 @@ You are a helpful AI assistant for Black White Denim's blog platform. You help w
 Brand context: {$brandVoice}
 
 Be helpful, creative, and knowledgeable about fashion and content marketing.
+ALWAYS use British English spelling (colour, favourite, accessorise, centre, organised, realise, jewellery).
 PROMPT;
 
         return $this->callApi($systemPrompt, $message);
@@ -606,7 +621,7 @@ RULES:
 - Section updates must include "index" (0-based)
 - To remove a carousel, set carousel_brand_id and carousel_category_id to null
 - Keep content concise and on-brand
-- Use British English spelling
+- ALWAYS use British English spelling (colour, favourite, accessorise, centre, organised, realise, jewellery, travelling)
 - Be conversational in your message
 PROMPT;
 
