@@ -1748,6 +1748,14 @@ const App = {
                     </div>
                 </div>
                 
+                <div class="card" onclick="App.navigate('/calendar-events')" style="cursor:pointer;">
+                    <div class="card-body" style="text-align:center;padding:40px;">
+                        <div style="font-size:32px;margin-bottom:12px;">📅</div>
+                        <div style="font-weight:600;margin-bottom:4px;">Calendar Events</div>
+                        <div style="font-size:13px;color:var(--text-secondary);">Manage seasonal events for content</div>
+                    </div>
+                </div>
+                
                 <div class="card" onclick="App.navigate('/settings/maintenance')" style="cursor:pointer;">
                     <div class="card-body" style="text-align:center;padding:40px;">
                         <div style="font-size:32px;margin-bottom:12px;">🧹</div>
