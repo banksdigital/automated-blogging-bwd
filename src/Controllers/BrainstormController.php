@@ -3,83 +3,179 @@
 namespace App\Controllers;
 
 use App\Helpers\Database;
+use App\Services\ClaudeService;
 
 class BrainstormController
 {
-    public function __construct(array $config) {}
+    private array $config;
 
-    public function index(array $params): void
+    public function __construct(array $config)
     {
-        $status = $params['status'] ?? null;
-        $sql = "SELECT bi.*, se.name as event_name FROM brainstorm_ideas bi
-                LEFT JOIN seasonal_events se ON bi.suggested_event_id = se.id
-                WHERE 1=1";
-        $bindings = [];
-
-        if ($status) {
-            $sql .= " AND bi.status = ?";
-            $bindings[] = $status;
-        }
-
-        $sql .= " ORDER BY bi.created_at DESC";
-        $ideas = Database::query($sql, $bindings);
-        echo json_encode(['success' => true, 'data' => $ideas]);
+        $this->config = $config;
     }
 
+    /**
+     * Get all brainstorm ideas
+     */
+    public function index(array $params = []): void
+    {
+        try {
+            $ideas = Database::query(
+                "SELECT * FROM brainstorm_ideas ORDER BY created_at DESC"
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $ideas
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
+    }
+
+    /**
+     * Create a new brainstorm idea (store)
+     */
     public function store(array $input): void
     {
-        $id = Database::insert(
-            "INSERT INTO brainstorm_ideas (title, description, suggested_event_id, suggested_products, ai_expanded_notes)
-             VALUES (?, ?, ?, ?, ?)",
-            [
-                $input['title'],
-                $input['description'] ?? null,
-                $input['suggested_event_id'] ?? null,
-                json_encode($input['suggested_products'] ?? []),
-                json_encode($input['ai_expanded_notes'] ?? [])
-            ]
-        );
-        echo json_encode(['success' => true, 'data' => ['id' => $id]]);
-    }
+        $title = $input['title'] ?? '';
+        $description = $input['description'] ?? '';
 
-    public function update(int $id, array $input): void
-    {
-        $fields = [];
-        $values = [];
-        foreach (['title', 'description', 'status', 'suggested_event_id'] as $field) {
-            if (array_key_exists($field, $input)) {
-                $fields[] = "{$field} = ?";
-                $values[] = $input[$field];
-            }
-        }
-        if (!empty($fields)) {
-            $values[] = $id;
-            Database::execute("UPDATE brainstorm_ideas SET " . implode(', ', $fields) . " WHERE id = ?", $values);
-        }
-        echo json_encode(['success' => true, 'data' => ['message' => 'Idea updated']]);
-    }
-
-    public function convert(int $id): void
-    {
-        $idea = Database::queryOne("SELECT * FROM brainstorm_ideas WHERE id = ?", [$id]);
-        if (!$idea) {
-            http_response_code(404);
-            echo json_encode(['success' => false, 'error' => ['message' => 'Idea not found']]);
+        if (empty($title)) {
+            http_response_code(400);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => 'Title is required']
+            ]);
             return;
         }
 
-        // Create post from idea
-        $postId = Database::insert(
-            "INSERT INTO posts (title, status, seasonal_event_id, created_by) VALUES (?, 'idea', ?, ?)",
-            [$idea['title'], $idea['suggested_event_id'], $_SESSION['user_id'] ?? null]
-        );
+        try {
+            $id = Database::insert(
+                "INSERT INTO brainstorm_ideas (title, description, created_at) VALUES (?, ?, NOW())",
+                [$title, $description]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'data' => ['id' => $id]
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
+    }
 
-        // Update idea
-        Database::execute(
-            "UPDATE brainstorm_ideas SET status = 'converted', converted_post_id = ? WHERE id = ?",
-            [$postId, $id]
-        );
+    /**
+     * Update a brainstorm idea
+     */
+    public function update(int $id, array $input): void
+    {
+        $title = $input['title'] ?? '';
+        $description = $input['description'] ?? '';
 
-        echo json_encode(['success' => true, 'data' => ['post_id' => $postId]]);
+        try {
+            Database::execute(
+                "UPDATE brainstorm_ideas SET title = ?, description = ? WHERE id = ?",
+                [$title, $description, $id]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Idea updated'
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
+    }
+
+    /**
+     * Delete a brainstorm idea
+     */
+    public function delete(int $id): void
+    {
+        try {
+            Database::execute("DELETE FROM brainstorm_ideas WHERE id = ?", [$id]);
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Idea deleted'
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
+    }
+
+    /**
+     * Convert a brainstorm idea to a draft post
+     */
+    public function convert(int $id): void
+    {
+        try {
+            // Get the idea
+            $idea = Database::queryOne(
+                "SELECT * FROM brainstorm_ideas WHERE id = ?",
+                [$id]
+            );
+            
+            if (!$idea) {
+                http_response_code(404);
+                echo json_encode([
+                    'success' => false,
+                    'error' => ['message' => 'Idea not found']
+                ]);
+                return;
+            }
+            
+            // Create a new post from the idea
+            $postId = Database::insert(
+                "INSERT INTO posts (title, intro_content, status, created_at, updated_at) 
+                 VALUES (?, ?, 'idea', NOW(), NOW())",
+                [
+                    $idea['title'],
+                    $idea['description'] ?? ''
+                ]
+            );
+            
+            // Optionally delete the idea after converting
+            // Database::execute("DELETE FROM brainstorm_ideas WHERE id = ?", [$id]);
+            
+            // Mark idea as converted instead
+            Database::execute(
+                "UPDATE brainstorm_ideas SET converted_post_id = ? WHERE id = ?",
+                [$postId, $id]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'data' => [
+                    'post_id' => $postId,
+                    'message' => 'Idea converted to post'
+                ]
+            ]);
+            
+        } catch (\Exception $e) {
+            error_log("Convert idea error: " . $e->getMessage());
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
     }
 }

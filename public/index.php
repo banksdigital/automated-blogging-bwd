@@ -276,6 +276,9 @@ function routeApi(string $path, string $method, array $config): void
         case preg_match('#^/brainstorm/(\d+)$#', $path, $m) && $method === 'PUT':
             (new \App\Controllers\BrainstormController($config))->update((int)$m[1], $input);
             break;
+        case preg_match('#^/brainstorm/(\d+)$#', $path, $m) && $method === 'DELETE':
+            (new \App\Controllers\BrainstormController($config))->delete((int)$m[1]);
+            break;
         case preg_match('#^/brainstorm/(\d+)/convert$#', $path, $m) && $method === 'POST':
             (new \App\Controllers\BrainstormController($config))->convert((int)$m[1]);
             break;
