@@ -1325,7 +1325,6 @@ const App = {
                                         <th style="text-align:left;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Start Date</th>
                                         <th style="text-align:left;padding:12px 8px;font-size:12px;color:var(--text-secondary);">End Date</th>
                                         <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Posts</th>
-                                        <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Recurring</th>
                                         <th style="text-align:right;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Actions</th>
                                     </tr>
                                 </thead>
@@ -1351,7 +1350,6 @@ const App = {
                                         <th style="text-align:left;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Start Date</th>
                                         <th style="text-align:left;padding:12px 8px;font-size:12px;color:var(--text-secondary);">End Date</th>
                                         <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Posts</th>
-                                        <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Recurring</th>
                                         <th style="text-align:right;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Actions</th>
                                     </tr>
                                 </thead>
@@ -1382,25 +1380,8 @@ const App = {
                             <div class="form-group">
                                 <label class="form-label">End Date</label>
                                 <input type="date" id="event-end-date" class="form-input">
+                                <small style="color:var(--text-muted);font-size:11px;">Optional - for multi-day events</small>
                             </div>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label class="form-label">Description</label>
-                            <textarea id="event-description" class="form-input form-textarea" rows="2" placeholder="Brief description of the event..."></textarea>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label class="form-label">Content Themes</label>
-                            <textarea id="event-themes" class="form-input form-textarea" rows="2" placeholder="Gift guides, style tips, outfit ideas..."></textarea>
-                            <small style="color:var(--text-muted);font-size:11px;">Comma-separated themes for content generation</small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                                <input type="checkbox" id="event-recurring" checked>
-                                <span>Recurring annually</span>
-                            </label>
                         </div>
                         
                         <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:24px;">
@@ -1434,7 +1415,6 @@ const App = {
             <tr style="border-bottom:1px solid var(--border-default);">
                 <td style="padding:12px 8px;">
                     <div style="font-weight:500;">${this.escapeHtml(event.name)}</div>
-                    ${event.description ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${this.escapeHtml(event.description).substring(0, 60)}${event.description.length > 60 ? '...' : ''}</div>` : ''}
                     ${statusBadge ? `<div style="margin-top:4px;">${statusBadge}</div>` : ''}
                 </td>
                 <td style="padding:12px 8px;color:var(--text-secondary);">
@@ -1445,9 +1425,6 @@ const App = {
                 </td>
                 <td style="padding:12px 8px;text-align:center;">
                     <span style="padding:2px 8px;background:var(--bg-tertiary);border-radius:4px;font-size:12px;">${event.post_count || 0}</span>
-                </td>
-                <td style="padding:12px 8px;text-align:center;">
-                    ${event.is_recurring ? '✓' : '—'}
                 </td>
                 <td style="padding:12px 8px;text-align:right;">
                     <button class="btn btn-sm btn-secondary" onclick="App.editEvent(${event.id})" style="margin-right:4px;">Edit</button>
@@ -1463,9 +1440,6 @@ const App = {
         document.getElementById('event-name').value = '';
         document.getElementById('event-start-date').value = '';
         document.getElementById('event-end-date').value = '';
-        document.getElementById('event-description').value = '';
-        document.getElementById('event-themes').value = '';
-        document.getElementById('event-recurring').checked = true;
         document.getElementById('event-modal').style.display = 'flex';
     },
     
@@ -1484,9 +1458,6 @@ const App = {
             document.getElementById('event-name').value = event.name || '';
             document.getElementById('event-start-date').value = event.start_date || '';
             document.getElementById('event-end-date').value = event.end_date || '';
-            document.getElementById('event-description').value = event.description || '';
-            document.getElementById('event-themes').value = event.content_themes || '';
-            document.getElementById('event-recurring').checked = event.is_recurring == 1;
             document.getElementById('event-modal').style.display = 'flex';
         } catch (error) {
             this.toast(error.message, 'error');
@@ -1502,9 +1473,6 @@ const App = {
         const name = document.getElementById('event-name').value.trim();
         const startDate = document.getElementById('event-start-date').value;
         const endDate = document.getElementById('event-end-date').value;
-        const description = document.getElementById('event-description').value.trim();
-        const contentThemes = document.getElementById('event-themes').value.trim();
-        const isRecurring = document.getElementById('event-recurring').checked ? 1 : 0;
         
         if (!name) {
             this.toast('Event name is required', 'error');
@@ -1519,10 +1487,7 @@ const App = {
         const data = {
             name,
             start_date: startDate,
-            end_date: endDate || null,
-            description,
-            content_themes: contentThemes,
-            is_recurring: isRecurring
+            end_date: endDate || null
         };
         
         try {

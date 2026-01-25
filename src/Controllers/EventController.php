@@ -59,9 +59,6 @@ class EventController
         $slug = $input['slug'] ?? $this->generateSlug($name);
         $startDate = $input['start_date'] ?? null;
         $endDate = $input['end_date'] ?? null;
-        $description = $input['description'] ?? '';
-        $contentThemes = $input['content_themes'] ?? '';
-        $isRecurring = $input['is_recurring'] ?? 1;
 
         if (empty($name)) {
             http_response_code(400);
@@ -82,10 +79,11 @@ class EventController
         }
 
         try {
+            // Use basic columns that should exist
             $id = Database::insert(
-                "INSERT INTO seasonal_events (name, slug, start_date, end_date, description, content_themes, is_recurring, created_at) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
-                [$name, $slug, $startDate, $endDate ?: null, $description, $contentThemes, $isRecurring]
+                "INSERT INTO seasonal_events (name, slug, start_date, end_date) 
+                 VALUES (?, ?, ?, ?)",
+                [$name, $slug, $startDate, $endDate ?: null]
             );
             
             echo json_encode([
@@ -111,9 +109,6 @@ class EventController
         $slug = $input['slug'] ?? null;
         $startDate = $input['start_date'] ?? null;
         $endDate = $input['end_date'] ?? null;
-        $description = $input['description'] ?? '';
-        $contentThemes = $input['content_themes'] ?? '';
-        $isRecurring = $input['is_recurring'] ?? 1;
 
         if (empty($name)) {
             http_response_code(400);
@@ -132,9 +127,9 @@ class EventController
 
             Database::execute(
                 "UPDATE seasonal_events 
-                 SET name = ?, slug = ?, start_date = ?, end_date = ?, description = ?, content_themes = ?, is_recurring = ?
+                 SET name = ?, slug = ?, start_date = ?, end_date = ?
                  WHERE id = ?",
-                [$name, $slug, $startDate, $endDate ?: null, $description, $contentThemes, $isRecurring, $id]
+                [$name, $slug, $startDate, $endDate ?: null, $id]
             );
             
             echo json_encode([
