@@ -1165,11 +1165,6 @@ const App = {
                                                     🎯 ${this.escapeHtml(post.event_name)}
                                                 </span>
                                             ` : ''}
-                                            ${post.template_name ? `
-                                                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-tertiary);font-size:11px;">
-                                                    📝 ${this.escapeHtml(post.template_name)}
-                                                </span>
-                                            ` : ''}
                                             ${post.category_name ? `
                                                 <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-tertiary);font-size:11px;">
                                                     📁 ${this.escapeHtml(post.category_name)}
@@ -1257,18 +1252,32 @@ const App = {
     
     async aiBrainstorm() {
         const prompt = document.getElementById('brainstorm-prompt').value;
-        if (!prompt) return;
+        if (!prompt) {
+            this.toast('Please enter a topic first', 'error');
+            return;
+        }
         
         const results = document.getElementById('brainstorm-results');
         results.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         
         try {
             const data = await this.api('/claude/brainstorm', { method: 'POST', body: { prompt } });
-            results.innerHTML = data.map(idea => `
+            const ideas = data.ideas || data || [];
+            
+            if (!ideas.length) {
+                results.innerHTML = '<p style="color:var(--text-secondary);">No ideas generated. Try a different topic.</p>';
+                return;
+            }
+            
+            results.innerHTML = ideas.map(idea => `
                 <div style="padding:16px;border:1px solid var(--border-default);margin-bottom:12px;">
                     <div style="font-weight:500;">${this.escapeHtml(idea.title)}</div>
-                    <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">${this.escapeHtml(idea.description)}</div>
-                    <button class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="App.saveIdea('${this.escapeHtml(idea.title).replace(/'/g, "\\'")}', '${this.escapeHtml(idea.description).replace(/'/g, "\\'")}')">Save Idea</button>
+                    <div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">${this.escapeHtml(idea.description || '')}</div>
+                    <div style="display:flex;gap:8px;margin-top:12px;">
+                        ${idea.content_type ? `<span style="font-size:11px;padding:4px 8px;background:var(--bg-tertiary);">${this.escapeHtml(idea.content_type)}</span>` : ''}
+                        ${idea.target_audience ? `<span style="font-size:11px;padding:4px 8px;background:var(--bg-tertiary);">🎯 ${this.escapeHtml(idea.target_audience)}</span>` : ''}
+                    </div>
+                    <button class="btn btn-sm btn-secondary" style="margin-top:12px;" onclick="App.saveIdea(\`${this.escapeHtml(idea.title).replace(/`/g, '\\`')}\`, \`${this.escapeHtml(idea.description || '').replace(/`/g, '\\`')}\`)">💾 Save Idea</button>
                 </div>
             `).join('');
         } catch (error) {

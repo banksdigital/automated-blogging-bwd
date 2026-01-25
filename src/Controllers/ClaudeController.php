@@ -43,14 +43,19 @@ class ClaudeController
 
         try {
             $service = new ClaudeService($this->config);
-            $result = $service->brainstorm($prompt, $seasonalContext);
+            
+            // Pass as array - ClaudeService::brainstorm expects array $params
+            $result = $service->brainstorm([
+                'prompt' => $prompt,
+                'topic' => $prompt,
+                'seasonal_context' => $seasonalContext
+            ]);
 
             $this->logActivity('ai_brainstorm', 'claude', null, ['prompt' => substr($prompt, 0, 100)]);
 
             echo json_encode([
-                'success' => $result['success'],
-                'data' => $result['data'] ?? null,
-                'error' => $result['error'] ?? null
+                'success' => true,
+                'data' => $result
             ]);
 
         } catch (\Exception $e) {
@@ -88,8 +93,8 @@ class ClaudeController
             $this->logActivity('ai_generate_section', 'claude', null);
 
             echo json_encode([
-                'success' => $result['success'],
-                'data' => $result['data'] ?? null,
+                'success' => $result['success'] ?? true,
+                'data' => $result['data'] ?? $result,
                 'error' => $result['error'] ?? null
             ]);
 
@@ -137,8 +142,8 @@ class ClaudeController
             $this->logActivity('ai_generate_post', 'claude', null, ['topic' => $topic]);
 
             echo json_encode([
-                'success' => $result['success'],
-                'data' => $result['data'] ?? null,
+                'success' => $result['success'] ?? true,
+                'data' => $result['data'] ?? $result,
                 'error' => $result['error'] ?? null
             ]);
 
@@ -174,8 +179,8 @@ class ClaudeController
             $result = $service->improveContent($content, $instruction);
 
             echo json_encode([
-                'success' => $result['success'],
-                'data' => $result['data'] ?? null,
+                'success' => $result['success'] ?? true,
+                'data' => $result['data'] ?? $result,
                 'error' => $result['error'] ?? null
             ]);
 
@@ -226,9 +231,10 @@ class ClaudeController
             $service = new ClaudeService($this->config);
             $result = $service->suggestProducts($topic, $products);
 
-            if ($result['success'] && is_array($result['data'])) {
+            if (($result['success'] ?? true) && is_array($result['data'] ?? $result)) {
                 // Get full product details for suggested IDs
-                $suggestedIds = array_map('intval', $result['data']);
+                $data = $result['data'] ?? $result;
+                $suggestedIds = array_map('intval', $data);
                 if (!empty($suggestedIds)) {
                     $placeholders = implode(',', array_fill(0, count($suggestedIds), '?'));
                     $suggestedProducts = Database::query(
@@ -240,8 +246,8 @@ class ClaudeController
             }
 
             echo json_encode([
-                'success' => $result['success'],
-                'data' => $result['data'] ?? null,
+                'success' => $result['success'] ?? true,
+                'data' => $result['data'] ?? $result,
                 'error' => $result['error'] ?? null
             ]);
 
@@ -276,8 +282,8 @@ class ClaudeController
             $result = $service->generateMetaDescription($title, $content);
 
             echo json_encode([
-                'success' => $result['success'],
-                'data' => $result['data'] ?? null,
+                'success' => $result['success'] ?? true,
+                'data' => $result['data'] ?? $result,
                 'error' => $result['error'] ?? null
             ]);
 
@@ -312,9 +318,8 @@ class ClaudeController
             $result = $service->chat($message, $context);
 
             echo json_encode([
-                'success' => $result['success'],
-                'data' => $result['data'] ?? null,
-                'error' => $result['error'] ?? null
+                'success' => true,
+                'data' => $result
             ]);
 
         } catch (\Exception $e) {
@@ -322,6 +327,30 @@ class ClaudeController
             echo json_encode([
                 'success' => false,
                 'error' => ['code' => 'AI_ERROR', 'message' => $e->getMessage()]
+            ]);
+        }
+    }
+
+    /**
+     * AI Assistant for refining a specific post
+     */
+    public function postAssistant(array $input): void
+    {
+        try {
+            $service = new ClaudeService($this->config);
+            $result = $service->postAssistant($input);
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $result
+            ]);
+            
+        } catch (\Exception $e) {
+            error_log("Post assistant error: " . $e->getMessage());
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
             ]);
         }
     }
@@ -346,31 +375,6 @@ class ClaudeController
             );
         } catch (\Exception $e) {
             error_log("Failed to log activity: " . $e->getMessage());
-        }
-    }
-
-
-    /**
-     * AI Assistant for refining a specific post
-     */
-    public function postAssistant(array $input): void
-    {
-        try {
-            $service = new \App\Services\ClaudeService($this->config);
-            $result = $service->postAssistant($input);
-            
-            echo json_encode([
-                'success' => true,
-                'data' => $result
-            ]);
-            
-        } catch (\Exception $e) {
-            error_log("Post assistant error: " . $e->getMessage());
-            http_response_code(500);
-            echo json_encode([
-                'success' => false,
-                'error' => ['message' => $e->getMessage()]
-            ]);
         }
     }
 }
