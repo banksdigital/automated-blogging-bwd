@@ -259,6 +259,9 @@ function routeApi(string $path, string $method, array $config): void
         case $path === '/roadmap' && $method === 'GET':
             (new \App\Controllers\RoadmapController($config))->index($_GET);
             break;
+        case $path === '/roadmap/upcoming' && $method === 'GET':
+            (new \App\Controllers\RoadmapController($config))->upcoming();
+            break;
         case preg_match('#^/roadmap/(\d{4})/(\d{1,2})$#', $path, $m) && $method === 'GET':
             (new \App\Controllers\RoadmapController($config))->month((int)$m[1], (int)$m[2]);
             break;
@@ -467,9 +470,11 @@ function routeWeb(string $path, string $method, array $config): void
         case '/products':
         case '/autopilot':
         case '/settings':
+        case '/settings/defaults':
         case '/settings/brand-voice':
         case '/settings/writing-guidelines':
         case '/settings/sync':
+        case '/settings/maintenance':
             // All dashboard routes use the same SPA template
             renderTemplate('dashboard', $templateData);
             break;

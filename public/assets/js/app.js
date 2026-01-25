@@ -968,71 +968,236 @@ const App = {
     },
 
     // ==================== ROADMAP ====================
+    roadmapYear: null,
+    roadmapMonth: null,
+    roadmapView: 'calendar', // 'calendar' or 'timeline'
+    
     async loadRoadmap() {
         const main = document.getElementById('main-content');
         main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         
         const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
+        if (!this.roadmapYear) this.roadmapYear = now.getFullYear();
+        if (!this.roadmapMonth) this.roadmapMonth = now.getMonth() + 1;
         
         try {
-            const data = await this.api(`/roadmap/${year}/${month}`);
+            const data = await this.api(`/roadmap/${this.roadmapYear}/${this.roadmapMonth}`);
+            const upcoming = await this.api('/roadmap/upcoming').catch(() => []);
             
             main.innerHTML = `
                 <div class="page-header">
                     <div>
                         <h1 class="page-title">Content Roadmap</h1>
-                        <p class="page-subtitle">${new Date(year, month-1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</p>
+                        <p class="page-subtitle">Plan and visualize your content schedule</p>
                     </div>
                     <button class="btn btn-primary" onclick="App.navigate('/posts/new')">+ New Post</button>
                 </div>
                 
-                ${data.events.length ? `
-                <div class="card" style="margin-bottom:24px;">
-                    <div class="card-header"><span class="card-title">Active Events This Month</span></div>
-                    <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;">
-                        ${data.events.map(e => `<span style="padding:8px 16px;background:var(--bg-tertiary);font-size:13px;">${this.escapeHtml(e.name)}</span>`).join('')}
-                    </div>
+                <!-- View Toggle -->
+                <div style="display:flex;gap:8px;margin-bottom:24px;">
+                    <button class="btn ${this.roadmapView === 'calendar' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setRoadmapView('calendar')">📅 Calendar</button>
+                    <button class="btn ${this.roadmapView === 'timeline' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setRoadmapView('timeline')">📋 Timeline</button>
                 </div>
-                ` : ''}
                 
-                <div class="card">
-                    <div class="card-body">
-                        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;">
-                            <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Mon</div>
-                            <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Tue</div>
-                            <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Wed</div>
-                            <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Thu</div>
-                            <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Fri</div>
-                            <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Sat</div>
-                            <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Sun</div>
-                            ${this.renderCalendar(data.calendar, year, month)}
-                        </div>
-                    </div>
-                </div>
+                ${this.roadmapView === 'calendar' ? this.renderCalendarView(data) : this.renderTimelineView(upcoming)}
             `;
         } catch (error) {
             main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
         }
     },
     
-    renderCalendar(calendar, year, month) {
+    setRoadmapView(view) {
+        this.roadmapView = view;
+        this.loadRoadmap();
+    },
+    
+    changeRoadmapMonth(delta) {
+        this.roadmapMonth += delta;
+        if (this.roadmapMonth > 12) {
+            this.roadmapMonth = 1;
+            this.roadmapYear++;
+        } else if (this.roadmapMonth < 1) {
+            this.roadmapMonth = 12;
+            this.roadmapYear--;
+        }
+        this.loadRoadmap();
+    },
+    
+    goToToday() {
+        const now = new Date();
+        this.roadmapYear = now.getFullYear();
+        this.roadmapMonth = now.getMonth() + 1;
+        this.loadRoadmap();
+    },
+    
+    renderCalendarView(data) {
+        const monthName = new Date(this.roadmapYear, this.roadmapMonth - 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+        
+        return `
+            ${data.events?.length ? `
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-header"><span class="card-title">🎯 Active Events This Month</span></div>
+                <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;">
+                    ${data.events.map(e => `
+                        <span style="padding:8px 16px;background:var(--bg-tertiary);font-size:13px;border-left:3px solid var(--status-scheduled);">
+                            ${this.escapeHtml(e.name)}
+                            <span style="color:var(--text-muted);margin-left:8px;">${e.start_date ? new Date(e.start_date).toLocaleDateString('en-GB', {day:'numeric', month:'short'}) : ''}</span>
+                        </span>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
+            
+            <div class="card">
+                <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                    <div style="display:flex;align-items:center;gap:16px;">
+                        <button class="btn btn-sm btn-secondary" onclick="App.changeRoadmapMonth(-1)">← Prev</button>
+                        <span class="card-title" style="min-width:180px;text-align:center;">${monthName}</span>
+                        <button class="btn btn-sm btn-secondary" onclick="App.changeRoadmapMonth(1)">Next →</button>
+                    </div>
+                    <button class="btn btn-sm" onclick="App.goToToday()">Today</button>
+                </div>
+                <div class="card-body">
+                    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;">
+                        <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Mon</div>
+                        <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Tue</div>
+                        <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Wed</div>
+                        <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Thu</div>
+                        <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Fri</div>
+                        <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Sat</div>
+                        <div style="padding:8px;font-weight:600;color:var(--text-secondary);">Sun</div>
+                        ${this.renderCalendarDays(data.calendar, this.roadmapYear, this.roadmapMonth)}
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+    
+    renderCalendarDays(calendar, year, month) {
         const firstDay = new Date(year, month - 1, 1).getDay();
         const offset = firstDay === 0 ? 6 : firstDay - 1;
+        const today = new Date().toISOString().split('T')[0];
         
         let html = '';
         for (let i = 0; i < offset; i++) {
-            html += '<div style="padding:8px;"></div>';
+            html += '<div style="padding:8px;background:var(--bg-primary);"></div>';
         }
         
         calendar.forEach(day => {
             const hasPost = day.posts && day.posts.length > 0;
-            const isToday = day.date === new Date().toISOString().split('T')[0];
+            const isToday = day.date === today;
+            const isPast = day.date < today;
+            
             html += `
-                <div style="padding:8px;min-height:60px;background:${isToday ? 'var(--bg-tertiary)' : 'var(--bg-card)'};border:1px solid var(--border-default);">
-                    <div style="font-size:12px;color:var(--text-secondary);">${day.day}</div>
-                    ${hasPost ? day.posts.map(p => `<div style="font-size:10px;margin-top:4px;padding:2px 4px;background:var(--status-${p.status});color:white;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${this.escapeHtml(p.title)}</div>`).join('') : ''}
+                <div style="padding:8px;min-height:80px;background:${isToday ? 'var(--bg-hover)' : 'var(--bg-card)'};border:1px solid ${isToday ? 'var(--text-primary)' : 'var(--border-default)'};opacity:${isPast ? '0.6' : '1'};">
+                    <div style="font-size:12px;color:${isToday ? 'var(--text-primary)' : 'var(--text-secondary)'};font-weight:${isToday ? '600' : '400'};">${day.day}</div>
+                    ${hasPost ? day.posts.map(p => `
+                        <div onclick="App.navigate('/posts/${p.id}')" style="font-size:10px;margin-top:4px;padding:4px 6px;background:var(--status-${p.status});color:white;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:2px;" title="${this.escapeHtml(p.title)}">
+                            ${this.escapeHtml(p.title.substring(0, 20))}${p.title.length > 20 ? '...' : ''}
+                        </div>
+                    `).join('') : ''}
+                </div>
+            `;
+        });
+        
+        return html;
+    },
+    
+    renderTimelineView(upcoming) {
+        if (!upcoming || upcoming.length === 0) {
+            return `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📋</div>
+                            <div class="empty-state-title">No Upcoming Content</div>
+                            <p>Schedule some posts or generate content from Auto-pilot to see them here.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Group by month
+        const grouped = {};
+        upcoming.forEach(post => {
+            const date = new Date(post.scheduled_date);
+            const key = date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(post);
+        });
+        
+        let html = '';
+        
+        Object.entries(grouped).forEach(([month, posts]) => {
+            html += `
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">📅 ${month}</span>
+                        <span style="color:var(--text-secondary);font-size:13px;">${posts.length} post${posts.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        ${posts.map((post, i) => {
+                            const date = new Date(post.scheduled_date);
+                            const dayName = date.toLocaleDateString('en-GB', { weekday: 'short' });
+                            const dayNum = date.getDate();
+                            const isPast = date < new Date();
+                            
+                            return `
+                                <div style="display:flex;border-bottom:${i < posts.length - 1 ? '1px solid var(--border-default)' : 'none'};opacity:${isPast ? '0.6' : '1'};">
+                                    <!-- Date Column -->
+                                    <div style="width:80px;padding:20px;text-align:center;border-right:1px solid var(--border-default);background:var(--bg-tertiary);">
+                                        <div style="font-size:24px;font-weight:600;">${dayNum}</div>
+                                        <div style="font-size:12px;color:var(--text-secondary);">${dayName}</div>
+                                    </div>
+                                    
+                                    <!-- Content Column -->
+                                    <div style="flex:1;padding:20px;">
+                                        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+                                            <div style="font-weight:600;font-size:15px;cursor:pointer;" onclick="App.navigate('/posts/${post.id}')">${this.escapeHtml(post.title)}</div>
+                                            <span class="status-badge status-${post.status}"><span class="status-dot"></span> ${post.status}</span>
+                                        </div>
+                                        
+                                        <!-- Targeting Reason -->
+                                        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+                                            ${post.event_name ? `
+                                                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--status-scheduled);color:white;font-size:11px;border-radius:2px;">
+                                                    🎯 ${this.escapeHtml(post.event_name)}
+                                                </span>
+                                            ` : ''}
+                                            ${post.template_name ? `
+                                                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-tertiary);font-size:11px;">
+                                                    📝 ${this.escapeHtml(post.template_name)}
+                                                </span>
+                                            ` : ''}
+                                            ${post.category_name ? `
+                                                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-tertiary);font-size:11px;">
+                                                    📁 ${this.escapeHtml(post.category_name)}
+                                                </span>
+                                            ` : ''}
+                                            ${post.section_count ? `
+                                                <span style="padding:4px 10px;background:var(--bg-tertiary);font-size:11px;">
+                                                    ${post.section_count} sections
+                                                </span>
+                                            ` : ''}
+                                        </div>
+                                        
+                                        ${post.meta_description ? `
+                                            <div style="margin-top:12px;font-size:13px;color:var(--text-secondary);line-height:1.5;">
+                                                ${this.escapeHtml(post.meta_description.substring(0, 150))}${post.meta_description.length > 150 ? '...' : ''}
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                    
+                                    <!-- Timeline Connector -->
+                                    <div style="width:40px;position:relative;display:flex;align-items:center;justify-content:center;">
+                                        <div style="width:12px;height:12px;background:var(--status-${post.status});border-radius:50%;z-index:1;"></div>
+                                        <div style="position:absolute;top:0;bottom:0;left:50%;width:2px;background:var(--border-default);transform:translateX(-50%);"></div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
                 </div>
             `;
         });

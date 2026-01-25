@@ -89,4 +89,45 @@ class RoadmapController
             ]
         ]);
     }
+        /**
+     * Get upcoming posts for timeline view
+     */
+    public function upcoming(): void
+    {
+        try {
+            $posts = Database::query(
+                "SELECT 
+                    p.id,
+                    p.title,
+                    p.status,
+                    p.scheduled_date,
+                    p.meta_description,
+                    p.wp_post_id,
+                    se.name as event_name,
+                    ct.name as template_name,
+                    wc.name as category_name,
+                    (SELECT COUNT(*) FROM post_sections WHERE post_id = p.id) as section_count
+                 FROM posts p
+                 LEFT JOIN seasonal_events se ON p.seasonal_event_id = se.id
+                 LEFT JOIN content_templates ct ON p.template_id = ct.id
+                 LEFT JOIN wp_categories wc ON p.wp_category_id = wc.id
+                 WHERE p.scheduled_date IS NOT NULL
+                   AND p.scheduled_date >= CURDATE() - INTERVAL 7 DAY
+                 ORDER BY p.scheduled_date ASC
+                 LIMIT 50"
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $posts
+            ]);
+            
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
+    }
 }
