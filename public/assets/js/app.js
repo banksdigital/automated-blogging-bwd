@@ -1079,15 +1079,40 @@ const App = {
     renderCalendarView(data) {
         const monthName = new Date(this.roadmapYear, this.roadmapMonth - 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
         
+        // Calculate days until each event for display
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const formatEventDate = (event) => {
+            if (!event.start_date) return '';
+            const startDate = new Date(event.start_date);
+            const daysUntil = Math.ceil((startDate - today) / (1000 * 60 * 60 * 24));
+            
+            if (daysUntil < 0) {
+                return '<span style="color:var(--status-published);">Active now</span>';
+            } else if (daysUntil === 0) {
+                return '<span style="color:var(--status-review);font-weight:600;">Today!</span>';
+            } else if (daysUntil <= 7) {
+                return `<span style="color:var(--status-review);">${daysUntil} day${daysUntil !== 1 ? 's' : ''} away</span>`;
+            } else if (daysUntil <= 14) {
+                return `<span style="color:var(--status-scheduled);">${Math.ceil(daysUntil / 7)} weeks away</span>`;
+            } else {
+                return startDate.toLocaleDateString('en-GB', {day:'numeric', month:'short'});
+            }
+        };
+        
         return `
             ${data.events?.length ? `
             <div class="card" style="margin-bottom:24px;">
-                <div class="card-header"><span class="card-title">🎯 Active Events This Month</span></div>
+                <div class="card-header">
+                    <span class="card-title">🎯 Upcoming Events</span>
+                    <span style="font-size:12px;color:var(--text-muted);">Next 6 weeks</span>
+                </div>
                 <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;">
                     ${data.events.map(e => `
-                        <span style="padding:8px 16px;background:var(--bg-tertiary);font-size:13px;border-left:3px solid var(--status-scheduled);">
-                            ${this.escapeHtml(e.name)}
-                            <span style="color:var(--text-muted);margin-left:8px;">${e.start_date ? new Date(e.start_date).toLocaleDateString('en-GB', {day:'numeric', month:'short'}) : ''}</span>
+                        <span style="padding:10px 16px;background:var(--bg-tertiary);font-size:13px;border-left:3px solid var(--status-scheduled);display:flex;flex-direction:column;gap:4px;">
+                            <strong>${this.escapeHtml(e.name)}</strong>
+                            <span style="font-size:11px;">${formatEventDate(e)}</span>
                         </span>
                     `).join('')}
                 </div>
