@@ -586,7 +586,7 @@ PROMPT;
         
         // Get valid brand/category combinations for carousel suggestions
         $validCombos = Database::query(
-            "SELECT b.wp_term_id as brand_id, b.name as brand_name, pc.wp_term_id as category_id, pc.name as category_name
+            "SELECT b.wp_term_id as brand_id, b.name as brand_name, b.slug as brand_slug, pc.wp_term_id as category_id, pc.name as category_name
              FROM wp_brands b
              JOIN wp_products p ON p.brand_id = b.id
              JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
@@ -597,9 +597,9 @@ PROMPT;
              LIMIT 50"
         );
         
-        $comboList = "VALID BRAND+CATEGORY COMBINATIONS FOR CAROUSELS:\n";
+        $comboList = "VALID BRAND+CATEGORY COMBINATIONS FOR CAROUSELS (use these exact IDs):\n";
         foreach ($validCombos as $combo) {
-            $comboList .= "- {$combo['brand_name']} (ID:{$combo['brand_id']}) + {$combo['category_name']} (ID:{$combo['category_id']})\n";
+            $comboList .= "- {$combo['brand_name']} (brand_id:{$combo['brand_id']}, slug:{$combo['brand_slug']}) + {$combo['category_name']} (category_id:{$combo['category_id']})\n";
         }
         
         $systemPrompt = <<<PROMPT
@@ -630,23 +630,30 @@ RESPONSE FORMAT - You MUST return valid JSON only:
                 "content": "Section content (100-150 words)",
                 "cta_text": "Shop Now",
                 "cta_url": "/brand/brand-slug/",
-                "carousel_brand_id": 123,
-                "carousel_category_id": 456
+                "carousel_brand_id": 916,
+                "carousel_category_id": 789
             }
         ]
     }
 }
 
-RULES:
+CRITICAL CAROUSEL RULES:
+- carousel_brand_id and carousel_category_id MUST be numeric IDs from the valid combinations list above
+- The carousel will NOT WORK without these IDs - just having the URL is not enough
+- Example: If using "Anine Bing (brand_id:916) + Dresses (category_id:789)" then set:
+  - carousel_brand_id: 916
+  - carousel_category_id: 789
+  - cta_url: "/brand/anine-bing/"
+- To have NO carousel, set BOTH to null
+- NEVER leave carousel_brand_id empty if you want a carousel to display
+
+OTHER RULES:
 - Only include fields in "updates" that you actually changed or created
 - If no changes needed, set "updates" to null
 - To CREATE NEW SECTIONS: use index 0, 1, 2, etc. in order
-- To remove a carousel, set carousel_brand_id and carousel_category_id to null
-- Carousel IDs MUST come from the valid combinations list above
 - Each section should be 100-150 words
 - Keep content concise and on-brand
 - ALWAYS use British English spelling (colour, favourite, accessorise, centre, organised, realise, jewellery, travelling)
-- CTA URLs should use /brand/brand-slug/ format
 - Be conversational in your message
 PROMPT;
 

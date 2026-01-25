@@ -2147,14 +2147,20 @@ const Claude = {
                         sectionEl.querySelector('.section-cta-url').value = sectionUpdate.cta_url;
                     }
                     if (sectionUpdate.carousel_brand_id !== undefined) {
-                        sectionEl.querySelector('.section-carousel-brand').value = sectionUpdate.carousel_brand_id || '';
+                        const brandSelect = sectionEl.querySelector('.section-carousel-brand');
+                        if (brandSelect) brandSelect.value = sectionUpdate.carousel_brand_id || '';
                     }
                     if (sectionUpdate.carousel_category_id !== undefined) {
-                        sectionEl.querySelector('.section-carousel-category').value = sectionUpdate.carousel_category_id || '';
+                        const catSelect = sectionEl.querySelector('.section-carousel-category');
+                        if (catSelect) catSelect.value = sectionUpdate.carousel_category_id || '';
                     }
                     changesMade.push(`Section ${sectionUpdate.index + 1} updated`);
                 } else if (sectionsContainer) {
-                    // Create new section
+                    // Create new section - ensure we have brand/category lists
+                    if (!App.brandsList || !App.categoriesList) {
+                        console.warn('Brands/categories list not loaded, section may not have carousel options');
+                    }
+                    
                     const newSection = {
                         heading: sectionUpdate.heading || '',
                         content: sectionUpdate.content || '',
@@ -2164,6 +2170,12 @@ const Claude = {
                         carousel_category_id: sectionUpdate.carousel_category_id || null
                     };
                     
+                    // Log what we're creating for debugging
+                    console.log('Creating new section with carousel:', {
+                        brand_id: newSection.carousel_brand_id,
+                        category_id: newSection.carousel_category_id
+                    });
+                    
                     // Get current section count
                     const existingSections = sectionsContainer.querySelectorAll('.section-item').length;
                     const newIndex = sectionUpdate.index !== undefined ? sectionUpdate.index : existingSections;
@@ -2171,6 +2183,26 @@ const Claude = {
                     // Render new section using App's renderSection
                     const sectionHtml = App.renderSection(newSection, newIndex);
                     sectionsContainer.insertAdjacentHTML('beforeend', sectionHtml);
+                    
+                    // After inserting, manually set the select values (in case renderSection didn't match)
+                    setTimeout(() => {
+                        const newSectionEl = document.querySelector(`.section-item[data-index="${newIndex}"]`);
+                        if (newSectionEl && newSection.carousel_brand_id) {
+                            const brandSelect = newSectionEl.querySelector('.section-carousel-brand');
+                            if (brandSelect) {
+                                brandSelect.value = newSection.carousel_brand_id;
+                                console.log('Set brand select to:', newSection.carousel_brand_id, 'Result:', brandSelect.value);
+                            }
+                        }
+                        if (newSectionEl && newSection.carousel_category_id) {
+                            const catSelect = newSectionEl.querySelector('.section-carousel-category');
+                            if (catSelect) {
+                                catSelect.value = newSection.carousel_category_id;
+                                console.log('Set category select to:', newSection.carousel_category_id, 'Result:', catSelect.value);
+                            }
+                        }
+                    }, 100);
+                    
                     changesMade.push(`Section ${newIndex + 1} created`);
                 }
             });
