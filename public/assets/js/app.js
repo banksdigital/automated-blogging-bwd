@@ -173,7 +173,7 @@ const App = {
                                 </div>
                             </div>
                             <div style="display:flex;gap:8px;">
-                                <button class="btn btn-secondary" onclick="App.generateContent()" id="generate-btn">Generate Content</button>
+                                <button class="btn btn-primary" onclick="App.generateContent()" id="generate-btn">▶ Run Auto-Pilot</button>
                             </div>
                         </div>
                     </div>
@@ -270,17 +270,63 @@ const App = {
     async generateContent() {
         const btn = document.getElementById('generate-btn');
         btn.disabled = true;
-        btn.textContent = 'Generating...';
+        btn.textContent = '⏳ Starting...';
+        
+        // Show loading overlay with status updates
+        const overlay = document.createElement('div');
+        overlay.id = 'autopilot-loading-overlay';
+        overlay.innerHTML = `
+            <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;">
+                <div style="background:var(--bg-card);padding:40px 60px;border-radius:8px;text-align:center;min-width:400px;">
+                    <div class="spinner" style="margin:0 auto 20px;"></div>
+                    <div style="font-size:18px;font-weight:600;margin-bottom:8px;">Auto-Pilot Running</div>
+                    <div id="autopilot-status" style="color:var(--text-secondary);font-size:14px;">Checking for pending content...</div>
+                    <div style="margin-top:20px;background:var(--bg-tertiary);border-radius:4px;padding:16px;text-align:left;">
+                        <div id="autopilot-log" style="font-size:12px;color:var(--text-muted);max-height:150px;overflow-y:auto;">
+                            <div>⏳ Starting auto-pilot...</div>
+                        </div>
+                    </div>
+                    <div style="color:var(--text-muted);font-size:12px;margin-top:16px;">This may take 30-60 seconds per post</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        
+        const updateStatus = (status, log) => {
+            const statusEl = document.getElementById('autopilot-status');
+            const logEl = document.getElementById('autopilot-log');
+            if (statusEl) statusEl.textContent = status;
+            if (logEl && log) {
+                logEl.innerHTML += `<div>${log}</div>`;
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+        };
         
         try {
+            updateStatus('Finding scheduled content...', '🔍 Checking scheduled_content table...');
+            
             const result = await this.api('/content/generate-pending', { method: 'POST' });
-            this.toast(result.message || 'Content generated!', 'success');
+            
+            if (result.generated && result.generated > 0) {
+                updateStatus('Complete!', `✅ Generated ${result.generated} post(s)!`);
+            } else {
+                updateStatus('Complete!', 'ℹ️ No pending content to generate');
+            }
+            
+            // Brief pause to show completion
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            this.toast(result.message || 'Auto-pilot complete!', 'success');
             this.loadDashboard();
         } catch (error) {
+            updateStatus('Error occurred', `❌ ${error.message}`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
             this.toast(error.message, 'error');
         } finally {
+            const existingOverlay = document.getElementById('autopilot-loading-overlay');
+            if (existingOverlay) existingOverlay.remove();
             btn.disabled = false;
-            btn.textContent = 'Generate Content';
+            btn.textContent = '▶ Run Auto-Pilot';
         }
     },
     
@@ -1700,7 +1746,7 @@ const App = {
                             <button class="btn btn-primary" onclick="App.seedEvents()">🗓 Seed Seasonal Events</button>
                             <button class="btn btn-primary" onclick="App.seedTemplates()">📝 Seed Content Templates</button>
                             <button class="btn btn-secondary" onclick="App.generateCalendar()">📅 Generate 3-Month Calendar</button>
-                            <button class="btn btn-secondary" onclick="App.generateContent()">🤖 Generate Pending Content</button>
+                            <button class="btn btn-primary" onclick="App.generateContent()" id="generate-btn">▶ Run Auto-Pilot</button>
                         </div>
                         <p style="font-size:12px;color:var(--text-secondary);margin-top:12px;">
                             First time? Click "Seed Seasonal Events" and "Seed Content Templates" to set up the defaults, then "Generate 3-Month Calendar" to create scheduled content slots.
@@ -1818,13 +1864,30 @@ const App = {
     },
     
     async generateCalendar() {
-        this.toast('Generating content calendar...');
+        // Show loading overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'calendar-loading-overlay';
+        overlay.innerHTML = `
+            <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;">
+                <div style="background:var(--bg-card);padding:40px 60px;border-radius:8px;text-align:center;">
+                    <div class="spinner" style="margin:0 auto 20px;"></div>
+                    <div style="font-size:18px;font-weight:600;margin-bottom:8px;">Generating Content Calendar</div>
+                    <div style="color:var(--text-secondary);font-size:14px;">Creating 3-month schedule based on seasonal events...</div>
+                    <div style="color:var(--text-muted);font-size:12px;margin-top:12px;">This may take a few seconds</div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        
         try {
             const result = await this.api('/content/calendar/generate', { method: 'POST', body: { months: 3 } });
             this.toast(result.message || 'Calendar generated!', 'success');
             this.loadAutoPilot();
         } catch (error) {
             this.toast(error.message, 'error');
+        } finally {
+            const existingOverlay = document.getElementById('calendar-loading-overlay');
+            if (existingOverlay) existingOverlay.remove();
         }
     },
 
