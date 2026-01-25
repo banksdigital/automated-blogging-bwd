@@ -254,6 +254,9 @@ function routeApi(string $path, string $method, array $config): void
         case preg_match('#^/events/(\d+)$#', $path, $m) && $method === 'PUT':
             (new \App\Controllers\EventController($config))->update((int)$m[1], $input);
             break;
+        case preg_match('#^/events/(\d+)$#', $path, $m) && $method === 'DELETE':
+            (new \App\Controllers\EventController($config))->delete((int)$m[1]);
+            break;
             
         // Roadmap
         case $path === '/roadmap' && $method === 'GET':
@@ -469,6 +472,7 @@ function routeWeb(string $path, string $method, array $config): void
         case '/posts':
         case '/posts/new':
         case '/roadmap':
+        case '/calendar-events':
         case '/brainstorm':
         case '/products':
         case '/autopilot':

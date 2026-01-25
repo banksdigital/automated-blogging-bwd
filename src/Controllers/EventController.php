@@ -6,61 +6,194 @@ use App\Helpers\Database;
 
 class EventController
 {
-    public function __construct(array $config) {}
+    private array $config;
 
+    public function __construct(array $config)
+    {
+        $this->config = $config;
+    }
+
+    /**
+     * Get all seasonal events
+     */
     public function index(): void
     {
-        $events = Database::query(
-            "SELECT * FROM seasonal_events WHERE is_active = TRUE ORDER BY start_date"
-        );
-        echo json_encode(['success' => true, 'data' => $events]);
+        try {
+            $events = Database::query(
+                "SELECT 
+                    se.*,
+                    (SELECT COUNT(*) FROM posts WHERE seasonal_event_id = se.id) as post_count,
+                    (SELECT COUNT(*) FROM scheduled_content WHERE seasonal_event_id = se.id) as scheduled_count
+                 FROM seasonal_events se
+                 ORDER BY se.start_date ASC"
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $events
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
     }
 
+    /**
+     * Create a new seasonal event
+     */
     public function store(array $input): void
     {
-        $id = Database::insert(
-            "INSERT INTO seasonal_events (name, slug, start_date, end_date, priority, content_themes, keywords)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [
-                $input['name'],
-                $this->slugify($input['name']),
-                $input['start_date'],
-                $input['end_date'],
-                $input['priority'] ?? 5,
-                json_encode($input['content_themes'] ?? []),
-                json_encode($input['keywords'] ?? [])
-            ]
-        );
-        echo json_encode(['success' => true, 'data' => ['id' => $id]]);
+        $name = trim($input['name'] ?? '');
+        $slug = $input['slug'] ?? $this->generateSlug($name);
+        $startDate = $input['start_date'] ?? null;
+        $endDate = $input['end_date'] ?? null;
+        $description = $input['description'] ?? '';
+        $contentThemes = $input['content_themes'] ?? '';
+        $isRecurring = $input['is_recurring'] ?? 1;
+
+        if (empty($name)) {
+            http_response_code(400);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => 'Event name is required']
+            ]);
+            return;
+        }
+
+        if (empty($startDate)) {
+            http_response_code(400);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => 'Start date is required']
+            ]);
+            return;
+        }
+
+        try {
+            $id = Database::insert(
+                "INSERT INTO seasonal_events (name, slug, start_date, end_date, description, content_themes, is_recurring, created_at) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
+                [$name, $slug, $startDate, $endDate ?: null, $description, $contentThemes, $isRecurring]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'data' => ['id' => $id],
+                'message' => 'Event created successfully'
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
     }
 
+    /**
+     * Update an existing seasonal event
+     */
     public function update(int $id, array $input): void
     {
-        $fields = [];
-        $values = [];
-        foreach (['name', 'start_date', 'end_date', 'priority', 'is_active'] as $field) {
-            if (array_key_exists($field, $input)) {
-                $fields[] = "{$field} = ?";
-                $values[] = $input[$field];
+        $name = trim($input['name'] ?? '');
+        $slug = $input['slug'] ?? null;
+        $startDate = $input['start_date'] ?? null;
+        $endDate = $input['end_date'] ?? null;
+        $description = $input['description'] ?? '';
+        $contentThemes = $input['content_themes'] ?? '';
+        $isRecurring = $input['is_recurring'] ?? 1;
+
+        if (empty($name)) {
+            http_response_code(400);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => 'Event name is required']
+            ]);
+            return;
+        }
+
+        try {
+            // If slug not provided, generate from name
+            if (empty($slug)) {
+                $slug = $this->generateSlug($name);
             }
+
+            Database::execute(
+                "UPDATE seasonal_events 
+                 SET name = ?, slug = ?, start_date = ?, end_date = ?, description = ?, content_themes = ?, is_recurring = ?
+                 WHERE id = ?",
+                [$name, $slug, $startDate, $endDate ?: null, $description, $contentThemes, $isRecurring, $id]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Event updated successfully'
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
         }
-        if (isset($input['content_themes'])) {
-            $fields[] = "content_themes = ?";
-            $values[] = json_encode($input['content_themes']);
-        }
-        if (isset($input['keywords'])) {
-            $fields[] = "keywords = ?";
-            $values[] = json_encode($input['keywords']);
-        }
-        if (!empty($fields)) {
-            $values[] = $id;
-            Database::execute("UPDATE seasonal_events SET " . implode(', ', $fields) . " WHERE id = ?", $values);
-        }
-        echo json_encode(['success' => true, 'data' => ['message' => 'Event updated']]);
     }
 
-    private function slugify(string $text): string
+    /**
+     * Delete a seasonal event
+     */
+    public function delete(int $id): void
     {
-        return trim(preg_replace('/[\s-]+/', '-', preg_replace('/[^a-z0-9\s-]/', '', strtolower($text))), '-');
+        try {
+            // Check if event has associated posts
+            $postCount = Database::queryOne(
+                "SELECT COUNT(*) as count FROM posts WHERE seasonal_event_id = ?",
+                [$id]
+            );
+            
+            if ($postCount && $postCount['count'] > 0) {
+                // Unlink posts from this event rather than blocking deletion
+                Database::execute(
+                    "UPDATE posts SET seasonal_event_id = NULL WHERE seasonal_event_id = ?",
+                    [$id]
+                );
+            }
+            
+            // Delete any scheduled content for this event
+            Database::execute(
+                "DELETE FROM scheduled_content WHERE seasonal_event_id = ?",
+                [$id]
+            );
+            
+            // Delete the event
+            Database::execute(
+                "DELETE FROM seasonal_events WHERE id = ?",
+                [$id]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Event deleted successfully'
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
+    }
+
+    /**
+     * Generate a URL-friendly slug from a name
+     */
+    private function generateSlug(string $name): string
+    {
+        $slug = strtolower($name);
+        $slug = preg_replace('/[^a-z0-9]+/', '-', $slug);
+        $slug = trim($slug, '-');
+        return $slug;
     }
 }

@@ -142,6 +142,20 @@ class BrainstormController
                 return;
             }
             
+            // Get default settings
+            $defaultAuthor = Database::queryOne(
+                "SELECT setting_value FROM app_settings WHERE setting_key = 'default_author_id'"
+            );
+            $defaultCategory = Database::queryOne(
+                "SELECT setting_value FROM app_settings WHERE setting_key = 'default_category_id'"
+            );
+            
+            $defaultAuthorId = $defaultAuthor['setting_value'] ?? null;
+            $defaultCategoryId = $defaultCategory['setting_value'] ?? null;
+            
+            // Try to match a seasonal event based on the idea title/description
+            $seasonalEventId = $this->matchSeasonalEvent($idea['title'], $idea['description'] ?? '');
+            
             // Generate full post content using Claude
             $claudeService = new \App\Services\ClaudeService($this->config);
             
@@ -157,20 +171,23 @@ class BrainstormController
             if (empty($content) || empty($content['title'])) {
                 // Fallback: create basic post if generation fails
                 $postId = Database::insert(
-                    "INSERT INTO posts (title, intro_content, status, created_at, updated_at) 
-                     VALUES (?, ?, 'draft', NOW(), NOW())",
-                    [$idea['title'], $idea['description'] ?? '']
+                    "INSERT INTO posts (title, intro_content, status, wp_author_id, wp_category_id, seasonal_event_id, created_at, updated_at) 
+                     VALUES (?, ?, 'draft', ?, ?, ?, NOW(), NOW())",
+                    [$idea['title'], $idea['description'] ?? '', $defaultAuthorId, $defaultCategoryId, $seasonalEventId]
                 );
             } else {
-                // Create full post with generated content
+                // Create full post with generated content and defaults
                 $postId = Database::insert(
-                    "INSERT INTO posts (title, intro_content, outro_content, meta_description, status, created_at, updated_at) 
-                     VALUES (?, ?, ?, ?, 'draft', NOW(), NOW())",
+                    "INSERT INTO posts (title, intro_content, outro_content, meta_description, status, wp_author_id, wp_category_id, seasonal_event_id, created_at, updated_at) 
+                     VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, NOW(), NOW())",
                     [
                         $content['title'] ?? $idea['title'],
                         $content['intro'] ?? '',
                         $content['outro'] ?? '',
-                        $content['meta_description'] ?? ''
+                        $content['meta_description'] ?? '',
+                        $defaultAuthorId,
+                        $defaultCategoryId,
+                        $seasonalEventId
                     ]
                 );
                 
@@ -217,5 +234,60 @@ class BrainstormController
                 'error' => ['message' => $e->getMessage()]
             ]);
         }
+    }
+    
+    /**
+     * Try to match a seasonal event based on text content
+     */
+    private function matchSeasonalEvent(string $title, string $description): ?int
+    {
+        $text = strtolower($title . ' ' . $description);
+        
+        // Get all upcoming seasonal events (next 3 months)
+        $events = Database::query(
+            "SELECT id, name, slug 
+             FROM seasonal_events 
+             WHERE start_date >= CURDATE() - INTERVAL 2 WEEK
+               AND start_date <= DATE_ADD(CURDATE(), INTERVAL 3 MONTH)
+             ORDER BY start_date ASC"
+        );
+        
+        // Keywords to match for each common event type
+        $keywords = [
+            'valentine' => ['valentine', 'galentine', 'love', 'romantic', 'hearts'],
+            'christmas' => ['christmas', 'xmas', 'festive', 'holiday gift', 'stocking'],
+            'mother' => ['mother', 'mum', 'mom', 'maternal'],
+            'father' => ['father', 'dad', 'paternal'],
+            'easter' => ['easter', 'spring break'],
+            'summer' => ['summer', 'vacation', 'holiday wardrobe', 'beach'],
+            'autumn' => ['autumn', 'fall', 'back to school'],
+            'winter' => ['winter', 'cozy', 'layering'],
+            'spring' => ['spring', 'new season', 'fresh'],
+            'black friday' => ['black friday', 'cyber monday', 'sale'],
+            'new year' => ['new year', 'nye', 'resolution'],
+        ];
+        
+        foreach ($events as $event) {
+            $eventSlug = strtolower($event['slug'] ?? '');
+            $eventName = strtolower($event['name']);
+            
+            // Direct match on event name or slug
+            if (strpos($text, $eventSlug) !== false || strpos($text, $eventName) !== false) {
+                return (int)$event['id'];
+            }
+            
+            // Check keyword matches
+            foreach ($keywords as $key => $keywordList) {
+                if (strpos($eventSlug, $key) !== false || strpos($eventName, $key) !== false) {
+                    foreach ($keywordList as $keyword) {
+                        if (strpos($text, $keyword) !== false) {
+                            return (int)$event['id'];
+                        }
+                    }
+                }
+            }
+        }
+        
+        return null;
     }
 }

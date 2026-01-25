@@ -114,6 +114,8 @@ const App = {
             this.loadPostEditor(id);
         } else if (path === '/roadmap') {
             this.loadRoadmap();
+        } else if (path === '/calendar-events') {
+            this.loadCalendarEvents();
         } else if (path === '/brainstorm') {
             this.loadBrainstorm();
         } else if (path === '/products') {
@@ -155,7 +157,8 @@ const App = {
                         <p class="page-subtitle">${new Date().toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
                     </div>
                     <div style="display:flex;gap:8px;">
-                        <button class="btn btn-secondary" onclick="App.navigate('/autopilot')">⚙ Auto-Pilot Settings</button>
+                        <button class="btn btn-secondary" onclick="App.navigate('/calendar-events')">📅 Calendar Events</button>
+                        <button class="btn btn-secondary" onclick="App.navigate('/autopilot')">⚙ Auto-Pilot</button>
                         <button class="btn btn-primary" onclick="App.navigate('/posts/new')">+ New Post</button>
                     </div>
                 </div>
@@ -439,27 +442,37 @@ const App = {
         main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
         
         try {
-            const [events, categories, authors, brands, productCategories] = await Promise.all([
+            const [events, categories, authors, brands, productCategories, defaults] = await Promise.all([
                 this.api('/events'),
                 this.api('/categories'),
                 this.api('/authors'),
                 this.api('/products/brands'),
-                this.api('/products/categories')
+                this.api('/products/categories'),
+                this.api('/settings/defaults').catch(() => ({})) // Catch in case defaults not set
             ]);
+            
+            // Debug: log defaults
+            console.log('Loaded defaults:', defaults);
             
             // Store brands and categories for use in renderSection
             this.brandsList = brands;
             this.categoriesList = productCategories;
+            
+            // Get default values, ensuring they're strings for comparison
+            const defaultCategoryId = defaults?.default_category_id ? String(defaults.default_category_id) : '';
+            const defaultAuthorId = defaults?.default_author_id ? String(defaults.default_author_id) : '';
+            
+            console.log('Default category ID:', defaultCategoryId, 'Default author ID:', defaultAuthorId);
             
             let post = {
                 title: '',
                 intro_content: '',
                 outro_content: '',
                 meta_description: '',
-                status: 'idea',
+                status: 'draft',
                 seasonal_event_id: '',
-                wp_category_id: '',
-                wp_author_id: '',
+                wp_category_id: defaultCategoryId,
+                wp_author_id: defaultAuthorId,
                 scheduled_date: '',
                 sections: []
             };
@@ -549,7 +562,7 @@ const App = {
                                     <label class="form-label">Seasonal Event</label>
                                     <select id="post-event" class="form-input form-select">
                                         <option value="">— None —</option>
-                                        ${events.map(e => `<option value="${e.id}" ${post.seasonal_event_id == e.id ? 'selected' : ''}>${this.escapeHtml(e.name)}</option>`).join('')}
+                                        ${events.map(e => `<option value="${e.id}" ${String(post.seasonal_event_id) === String(e.id) ? 'selected' : ''}>${this.escapeHtml(e.name)}</option>`).join('')}
                                     </select>
                                 </div>
                                 
@@ -557,7 +570,7 @@ const App = {
                                     <label class="form-label">Category</label>
                                     <select id="post-category" class="form-input form-select">
                                         <option value="">— Select —</option>
-                                        ${categories.map(c => `<option value="${c.id}" ${post.wp_category_id == c.id ? 'selected' : ''}>${this.escapeHtml(c.name)}</option>`).join('')}
+                                        ${categories.map(c => `<option value="${c.id}" ${String(post.wp_category_id) === String(c.id) ? 'selected' : ''}>${this.escapeHtml(c.name)}</option>`).join('')}
                                     </select>
                                 </div>
                                 
@@ -565,7 +578,7 @@ const App = {
                                     <label class="form-label">Author</label>
                                     <select id="post-author" class="form-input form-select">
                                         <option value="">— Select —</option>
-                                        ${authors.map(a => `<option value="${a.id}" ${post.wp_author_id == a.id ? 'selected' : ''}>${this.escapeHtml(a.name)}</option>`).join('')}
+                                        ${authors.map(a => `<option value="${a.id}" ${String(post.wp_author_id) === String(a.id) ? 'selected' : ''}>${this.escapeHtml(a.name)}</option>`).join('')}
                                     </select>
                                 </div>
                                 
@@ -1036,7 +1049,10 @@ const App = {
                         <h1 class="page-title">Content Roadmap</h1>
                         <p class="page-subtitle">Plan and visualize your content schedule</p>
                     </div>
-                    <button class="btn btn-primary" onclick="App.navigate('/posts/new')">+ New Post</button>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-secondary" onclick="App.navigate('/calendar-events')">📅 Manage Events</button>
+                        <button class="btn btn-primary" onclick="App.navigate('/posts/new')">+ New Post</button>
+                    </div>
                 </div>
                 
                 <!-- View Toggle -->
@@ -1269,6 +1285,274 @@ const App = {
         });
         
         return html;
+    },
+
+    // ==================== CALENDAR EVENTS ====================
+    async loadCalendarEvents() {
+        const main = document.getElementById('main-content');
+        main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        
+        try {
+            const events = await this.api('/events');
+            
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            // Categorize events
+            const pastEvents = events.filter(e => new Date(e.start_date) < today);
+            const upcomingEvents = events.filter(e => new Date(e.start_date) >= today);
+            
+            main.innerHTML = `
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Calendar Events</h1>
+                        <p class="page-subtitle">Manage seasonal events for content generation</p>
+                    </div>
+                    <button class="btn btn-primary" onclick="App.showAddEventModal()">+ Add Event</button>
+                </div>
+                
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">🎯 Upcoming Events</span>
+                        <span style="color:var(--text-secondary);font-size:13px;">${upcomingEvents.length} event${upcomingEvents.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div class="card-body">
+                        ${upcomingEvents.length ? `
+                            <table style="width:100%;border-collapse:collapse;">
+                                <thead>
+                                    <tr style="border-bottom:1px solid var(--border-default);">
+                                        <th style="text-align:left;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Event</th>
+                                        <th style="text-align:left;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Start Date</th>
+                                        <th style="text-align:left;padding:12px 8px;font-size:12px;color:var(--text-secondary);">End Date</th>
+                                        <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Posts</th>
+                                        <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Recurring</th>
+                                        <th style="text-align:right;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${upcomingEvents.map(e => this.renderEventRow(e, today)).join('')}
+                                </tbody>
+                            </table>
+                        ` : '<p style="text-align:center;color:var(--text-secondary);padding:20px;">No upcoming events. Add some to enable seasonal content generation.</p>'}
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">📜 Past Events</span>
+                        <span style="color:var(--text-secondary);font-size:13px;">${pastEvents.length} event${pastEvents.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div class="card-body">
+                        ${pastEvents.length ? `
+                            <table style="width:100%;border-collapse:collapse;">
+                                <thead>
+                                    <tr style="border-bottom:1px solid var(--border-default);">
+                                        <th style="text-align:left;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Event</th>
+                                        <th style="text-align:left;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Start Date</th>
+                                        <th style="text-align:left;padding:12px 8px;font-size:12px;color:var(--text-secondary);">End Date</th>
+                                        <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Posts</th>
+                                        <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Recurring</th>
+                                        <th style="text-align:right;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${pastEvents.map(e => this.renderEventRow(e, today)).join('')}
+                                </tbody>
+                            </table>
+                        ` : '<p style="text-align:center;color:var(--text-secondary);padding:20px;">No past events.</p>'}
+                    </div>
+                </div>
+                
+                <!-- Add/Edit Event Modal -->
+                <div id="event-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;">
+                    <div style="background:var(--bg-card);padding:32px;border-radius:8px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto;">
+                        <h2 id="event-modal-title" style="margin-bottom:24px;">Add Event</h2>
+                        <input type="hidden" id="event-id">
+                        
+                        <div class="form-group">
+                            <label class="form-label">Event Name *</label>
+                            <input type="text" id="event-name" class="form-input" placeholder="e.g., Valentine's Day">
+                        </div>
+                        
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                            <div class="form-group">
+                                <label class="form-label">Start Date *</label>
+                                <input type="date" id="event-start-date" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">End Date</label>
+                                <input type="date" id="event-end-date" class="form-input">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Description</label>
+                            <textarea id="event-description" class="form-input form-textarea" rows="2" placeholder="Brief description of the event..."></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Content Themes</label>
+                            <textarea id="event-themes" class="form-input form-textarea" rows="2" placeholder="Gift guides, style tips, outfit ideas..."></textarea>
+                            <small style="color:var(--text-muted);font-size:11px;">Comma-separated themes for content generation</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                <input type="checkbox" id="event-recurring" checked>
+                                <span>Recurring annually</span>
+                            </label>
+                        </div>
+                        
+                        <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:24px;">
+                            <button class="btn btn-secondary" onclick="App.closeEventModal()">Cancel</button>
+                            <button class="btn btn-primary" onclick="App.saveEvent()">Save Event</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
+        }
+    },
+    
+    renderEventRow(event, today) {
+        const startDate = new Date(event.start_date);
+        const daysUntil = Math.ceil((startDate - today) / (1000 * 60 * 60 * 24));
+        
+        let statusBadge = '';
+        if (daysUntil < 0) {
+            statusBadge = '<span style="font-size:11px;color:var(--text-muted);">Past</span>';
+        } else if (daysUntil === 0) {
+            statusBadge = '<span style="font-size:11px;padding:2px 8px;background:var(--status-review);color:white;border-radius:4px;">Today!</span>';
+        } else if (daysUntil <= 7) {
+            statusBadge = `<span style="font-size:11px;padding:2px 8px;background:var(--status-review);color:white;border-radius:4px;">${daysUntil}d away</span>`;
+        } else if (daysUntil <= 30) {
+            statusBadge = `<span style="font-size:11px;padding:2px 8px;background:var(--status-scheduled);color:white;border-radius:4px;">${Math.ceil(daysUntil/7)}w away</span>`;
+        }
+        
+        return `
+            <tr style="border-bottom:1px solid var(--border-default);">
+                <td style="padding:12px 8px;">
+                    <div style="font-weight:500;">${this.escapeHtml(event.name)}</div>
+                    ${event.description ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${this.escapeHtml(event.description).substring(0, 60)}${event.description.length > 60 ? '...' : ''}</div>` : ''}
+                    ${statusBadge ? `<div style="margin-top:4px;">${statusBadge}</div>` : ''}
+                </td>
+                <td style="padding:12px 8px;color:var(--text-secondary);">
+                    ${startDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </td>
+                <td style="padding:12px 8px;color:var(--text-secondary);">
+                    ${event.end_date ? new Date(event.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                </td>
+                <td style="padding:12px 8px;text-align:center;">
+                    <span style="padding:2px 8px;background:var(--bg-tertiary);border-radius:4px;font-size:12px;">${event.post_count || 0}</span>
+                </td>
+                <td style="padding:12px 8px;text-align:center;">
+                    ${event.is_recurring ? '✓' : '—'}
+                </td>
+                <td style="padding:12px 8px;text-align:right;">
+                    <button class="btn btn-sm btn-secondary" onclick="App.editEvent(${event.id})" style="margin-right:4px;">Edit</button>
+                    <button class="btn btn-sm" style="background:transparent;color:var(--status-error);" onclick="App.deleteEvent(${event.id}, '${this.escapeHtml(event.name).replace(/'/g, "\\'")}')">🗑️</button>
+                </td>
+            </tr>
+        `;
+    },
+    
+    showAddEventModal() {
+        document.getElementById('event-modal-title').textContent = 'Add Event';
+        document.getElementById('event-id').value = '';
+        document.getElementById('event-name').value = '';
+        document.getElementById('event-start-date').value = '';
+        document.getElementById('event-end-date').value = '';
+        document.getElementById('event-description').value = '';
+        document.getElementById('event-themes').value = '';
+        document.getElementById('event-recurring').checked = true;
+        document.getElementById('event-modal').style.display = 'flex';
+    },
+    
+    async editEvent(id) {
+        try {
+            const events = await this.api('/events');
+            const event = events.find(e => e.id === id);
+            
+            if (!event) {
+                this.toast('Event not found', 'error');
+                return;
+            }
+            
+            document.getElementById('event-modal-title').textContent = 'Edit Event';
+            document.getElementById('event-id').value = event.id;
+            document.getElementById('event-name').value = event.name || '';
+            document.getElementById('event-start-date').value = event.start_date || '';
+            document.getElementById('event-end-date').value = event.end_date || '';
+            document.getElementById('event-description').value = event.description || '';
+            document.getElementById('event-themes').value = event.content_themes || '';
+            document.getElementById('event-recurring').checked = event.is_recurring == 1;
+            document.getElementById('event-modal').style.display = 'flex';
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    closeEventModal() {
+        document.getElementById('event-modal').style.display = 'none';
+    },
+    
+    async saveEvent() {
+        const id = document.getElementById('event-id').value;
+        const name = document.getElementById('event-name').value.trim();
+        const startDate = document.getElementById('event-start-date').value;
+        const endDate = document.getElementById('event-end-date').value;
+        const description = document.getElementById('event-description').value.trim();
+        const contentThemes = document.getElementById('event-themes').value.trim();
+        const isRecurring = document.getElementById('event-recurring').checked ? 1 : 0;
+        
+        if (!name) {
+            this.toast('Event name is required', 'error');
+            return;
+        }
+        
+        if (!startDate) {
+            this.toast('Start date is required', 'error');
+            return;
+        }
+        
+        const data = {
+            name,
+            start_date: startDate,
+            end_date: endDate || null,
+            description,
+            content_themes: contentThemes,
+            is_recurring: isRecurring
+        };
+        
+        try {
+            if (id) {
+                await this.api(`/events/${id}`, { method: 'PUT', body: data });
+                this.toast('Event updated!', 'success');
+            } else {
+                await this.api('/events', { method: 'POST', body: data });
+                this.toast('Event created!', 'success');
+            }
+            
+            this.closeEventModal();
+            this.loadCalendarEvents();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async deleteEvent(id, name) {
+        if (!confirm(`Delete "${name}"? Any posts linked to this event will be unlinked.`)) {
+            return;
+        }
+        
+        try {
+            await this.api(`/events/${id}`, { method: 'DELETE' });
+            this.toast('Event deleted', 'success');
+            this.loadCalendarEvents();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
     },
 
     // ==================== BRAINSTORM ====================
