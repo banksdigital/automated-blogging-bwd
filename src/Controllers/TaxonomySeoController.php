@@ -326,8 +326,8 @@ class TaxonomySeoController
             
             $wpService = new WordPressService($this->config);
             $result = $wpService->updateTaxonomySeo('brand', $brand['wp_term_id'], [
-                'taxonomy_description' => $brand['seo_description'] ?? '',
-                'taxonomy_seo_description' => $brand['seo_meta_description'] ?? ''
+                'description' => $brand['seo_description'] ?? '',
+                'meta_description' => $brand['seo_meta_description'] ?? ''
             ]);
             
             echo json_encode([
@@ -356,8 +356,8 @@ class TaxonomySeoController
             
             $wpService = new WordPressService($this->config);
             $result = $wpService->updateTaxonomySeo('product_cat', $category['wp_term_id'], [
-                'taxonomy_description' => $category['seo_description'] ?? '',
-                'taxonomy_seo_description' => $category['seo_meta_description'] ?? ''
+                'description' => $category['seo_description'] ?? '',
+                'meta_description' => $category['seo_meta_description'] ?? ''
             ]);
             
             echo json_encode([
@@ -390,7 +390,7 @@ class TaxonomySeoController
             // Update local database
             Database::execute(
                 "UPDATE wp_brands SET seo_description = ?, seo_meta_description = ?, seo_updated_at = NOW() WHERE id = ?",
-                [$seoData['taxonomy_description'] ?? '', $seoData['taxonomy_seo_description'] ?? '', $id]
+                [$seoData['description'] ?? '', $seoData['meta_description'] ?? '', $id]
             );
             
             echo json_encode([
@@ -424,7 +424,7 @@ class TaxonomySeoController
             // Update local database
             Database::execute(
                 "UPDATE wp_product_categories SET seo_description = ?, seo_meta_description = ?, seo_updated_at = NOW() WHERE id = ?",
-                [$seoData['taxonomy_description'] ?? '', $seoData['taxonomy_seo_description'] ?? '', $id]
+                [$seoData['description'] ?? '', $seoData['meta_description'] ?? '', $id]
             );
             
             echo json_encode([

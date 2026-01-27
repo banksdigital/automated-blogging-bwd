@@ -262,9 +262,12 @@ class WordPressController
                 }
                 
                 // Extract ACF fields if present
+                // NOTE: Categories use different field names than brands:
+                // - category_description (not taxonomy_description)
+                // - seo_description (not taxonomy_seo_description)
                 $acf = $cat['acf'] ?? [];
-                $seoDescription = !empty($acf['taxonomy_description']) ? $acf['taxonomy_description'] : null;
-                $seoMetaDescription = !empty($acf['taxonomy_seo_description']) ? $acf['taxonomy_seo_description'] : null;
+                $seoDescription = !empty($acf['category_description']) ? $acf['category_description'] : null;
+                $seoMetaDescription = !empty($acf['seo_description']) ? $acf['seo_description'] : null;
                 
                 // FORCE truncate meta description to avoid column error
                 if ($seoMetaDescription) {

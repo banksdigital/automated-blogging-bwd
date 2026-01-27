@@ -1571,13 +1571,13 @@ const App = {
                         <input type="hidden" id="seo-edit-type">
                         
                         <div class="form-group">
-                            <label class="form-label">Description (taxonomy_description)</label>
-                            <textarea id="seo-description" class="form-input form-textarea" rows="8" placeholder="Main description with internal links..."></textarea>
+                            <label class="form-label">Description</label>
+                            <textarea id="seo-description" class="form-input form-textarea" rows="8" placeholder="Main description with internal links (150-250 words)..."></textarea>
                             <small style="color:var(--text-muted);font-size:11px;">HTML allowed. Include internal links to related categories/brands.</small>
                         </div>
                         
                         <div class="form-group">
-                            <label class="form-label">Meta Description (taxonomy_seo_description)</label>
+                            <label class="form-label">Meta Description</label>
                             <textarea id="seo-meta-description" class="form-input form-textarea" rows="2" placeholder="Short meta description for search engines (150-160 chars)..."></textarea>
                             <small style="color:var(--text-muted);font-size:11px;"><span id="meta-char-count">0</span>/160 characters</small>
                         </div>
@@ -1887,10 +1887,10 @@ const App = {
         try {
             const result = await this.api(`/taxonomy-seo/${type === 'brand' ? 'brands' : 'categories'}/${id}/pull`, { method: 'POST' });
             
-            // Update the form with pulled data
-            document.getElementById('seo-description').value = result.taxonomy_description || '';
-            document.getElementById('seo-meta-description').value = result.taxonomy_seo_description || '';
-            document.getElementById('meta-char-count').textContent = (result.taxonomy_seo_description || '').length;
+            // Update the form with pulled data (using generic keys from API)
+            document.getElementById('seo-description').value = result.description || '';
+            document.getElementById('seo-meta-description').value = result.meta_description || '';
+            document.getElementById('meta-char-count').textContent = (result.meta_description || '').length;
             
             this.toast('SEO content pulled from WordPress!', 'success');
         } catch (error) {
@@ -1906,61 +1906,68 @@ const App = {
         results.textContent = 'Testing WordPress REST API connection...\n\n';
         
         try {
-            // Get first brand from our database to test
+            // Test BRANDS
+            results.textContent += '═══ TESTING BRANDS ═══\n\n';
             const brands = await this.api('/taxonomy-seo/brands');
             if (brands.length > 0) {
                 const firstBrand = brands[0];
                 results.textContent += `Testing brand: "${firstBrand.name}" (wp_term_id: ${firstBrand.wp_term_id})\n`;
-                results.textContent += '─'.repeat(50) + '\n\n';
                 
-                // Call debug endpoint - returns data directly (api() returns data.data)
                 const debug = await this.api(`/wordpress/debug/brand/${firstBrand.wp_term_id}`);
-                
-                // Show single endpoint results
                 const single = debug.single_endpoint;
-                results.textContent += `📡 Single Brand Endpoint: ${single.url}\n`;
+                
+                results.textContent += `   Endpoint: ${single.url}\n`;
                 results.textContent += `   HTTP Status: ${single.http_code}\n`;
                 results.textContent += `   Has 'acf' key: ${single.has_acf_key ? '✅ YES' : '❌ NO'}\n`;
                 
                 if (single.has_acf_key && single.acf_fields) {
-                    results.textContent += `   ACF Fields: ${JSON.stringify(single.acf_fields, null, 2)}\n`;
-                }
-                
-                results.textContent += '\n';
-                
-                // Show list endpoint results
-                const list = debug.list_endpoint;
-                results.textContent += `📡 Brand List Endpoint: ${list.url}\n`;
-                results.textContent += `   HTTP Status: ${list.http_code}\n`;
-                results.textContent += `   First item has 'acf' key: ${list.first_item_has_acf ? '✅ YES' : '❌ NO'}\n`;
-                
-                if (list.first_item_has_acf && list.first_item_acf) {
-                    results.textContent += `   First item ACF Fields: ${JSON.stringify(list.first_item_acf, null, 2)}\n`;
-                }
-                
-                results.textContent += '\n' + '─'.repeat(50) + '\n\n';
-                
-                if (single.has_acf_key || list.first_item_has_acf) {
-                    results.textContent += '✅ SUCCESS: ACF fields are visible in the REST API!\n\n';
-                    results.textContent += 'If sync still shows "0 with SEO content", the fields might be empty in WordPress.\n';
-                    results.textContent += 'Check that your brands actually have content in the taxonomy_description field.';
-                } else {
-                    results.textContent += '❌ PROBLEM: ACF fields are NOT visible in the REST API!\n\n';
-                    results.textContent += 'Please check the following in WordPress:\n\n';
-                    results.textContent += '1. Go to ACF → Field Groups\n';
-                    results.textContent += '2. Edit the field group with taxonomy_description\n';
-                    results.textContent += '3. Click "Settings" tab at the top\n';
-                    results.textContent += '4. Ensure "Show in REST API" is toggled ON\n';
-                    results.textContent += '5. Check Location Rules show: Taxonomy = Brand\n';
-                    results.textContent += '6. Save the field group\n';
-                    results.textContent += '7. Clear any caches (WordPress, WP Rocket, etc.)\n\n';
-                    results.textContent += 'Raw response keys found: ' + single.all_keys.join(', ');
+                    // Brands use: taxonomy_description, taxonomy_seo_description
+                    const hasContent = single.acf_fields.taxonomy_description || single.acf_fields.taxonomy_seo_description;
+                    results.textContent += `   Has SEO content: ${hasContent ? '✅ YES' : '⚪ Empty'}\n`;
+                    results.textContent += `   Fields: taxonomy_description, taxonomy_seo_description\n`;
+                    if (single.acf_fields.taxonomy_description) {
+                        results.textContent += `   Description: "${single.acf_fields.taxonomy_description.substring(0, 50)}..."\n`;
+                    }
                 }
             } else {
-                results.textContent = 'No brands found in database.\n\nPlease sync brands first via Settings → Sync Data.';
+                results.textContent += 'No brands in database.\n';
             }
+            
+            // Test CATEGORIES
+            results.textContent += '\n═══ TESTING CATEGORIES ═══\n\n';
+            const categories = await this.api('/taxonomy-seo/categories');
+            if (categories.length > 0) {
+                const firstCat = categories[0];
+                results.textContent += `Testing category: "${firstCat.name}" (wp_term_id: ${firstCat.wp_term_id})\n`;
+                
+                const catDebug = await this.api(`/wordpress/debug/category/${firstCat.wp_term_id}`);
+                
+                results.textContent += `   Endpoint: ${catDebug.url}\n`;
+                results.textContent += `   HTTP Status: ${catDebug.http_code}\n`;
+                results.textContent += `   Has 'acf' key: ${catDebug.has_acf_key ? '✅ YES' : '❌ NO'}\n`;
+                
+                if (catDebug.has_acf_key && catDebug.acf_fields) {
+                    // Categories use DIFFERENT fields: category_description, seo_description
+                    const hasContent = catDebug.acf_fields.category_description || catDebug.acf_fields.seo_description;
+                    results.textContent += `   Has SEO content: ${hasContent ? '✅ YES' : '⚪ Empty'}\n`;
+                    results.textContent += `   Fields: category_description, seo_description\n`;
+                    if (catDebug.acf_fields.category_description) {
+                        results.textContent += `   Description: "${catDebug.acf_fields.category_description.substring(0, 50)}..."\n`;
+                    }
+                }
+            } else {
+                results.textContent += 'No categories in database.\n';
+            }
+            
+            results.textContent += '\n═══ SUMMARY ═══\n\n';
+            results.textContent += 'If both show ✅ for "Has acf key", the REST API is configured correctly.\n';
+            results.textContent += 'If fields show "Empty", the content just needs to be generated.\n';
+            results.textContent += '\nField names:\n';
+            results.textContent += '  Brands: taxonomy_description, taxonomy_seo_description\n';
+            results.textContent += '  Categories: category_description, seo_description';
+            
         } catch (error) {
-            results.textContent = 'Error: ' + error.message + '\n\nCheck the browser console for more details.';
+            results.textContent += '\n\nError: ' + error.message + '\n\nCheck the browser console for more details.';
             console.error('testTaxonomyApi error:', error);
         }
     },

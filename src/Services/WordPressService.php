@@ -507,9 +507,14 @@ public function getAllProductCategoriesWithAcf(): array
         
     } while (count($categories) === $perPage);
     
+    error_log("Category sync: Fetched " . count($allCategories) . " categories from WooCommerce");
+    
     // Now fetch ACF fields for each category from WordPress REST API
     // WooCommerce product categories use taxonomy 'product_cat'
+    $acfSuccessCount = 0;
+    $acfFailCount = 0;
     $firstCategory = true;
+    
     foreach ($allCategories as &$category) {
         try {
             // Use WordPress REST API endpoint for product_cat taxonomy
@@ -529,23 +534,29 @@ public function getAllProductCategoriesWithAcf(): array
             if ($httpCode === 200) {
                 $wpCategory = json_decode($response, true);
                 $category['acf'] = $wpCategory['acf'] ?? [];
+                $acfSuccessCount++;
                 
                 // Log first category to help debug
                 if ($firstCategory) {
                     $hasAcf = isset($wpCategory['acf']) ? 'yes' : 'no';
-                    $acfFields = isset($wpCategory['acf']) ? implode(', ', array_keys($wpCategory['acf'])) : 'none';
-                    error_log("Category sync: ACF present={$hasAcf}, fields={$acfFields}");
+                    $acfKeys = isset($wpCategory['acf']) ? array_keys($wpCategory['acf']) : [];
+                    error_log("Category sync first item: ACF present={$hasAcf}, keys=" . implode(',', $acfKeys));
+                    error_log("Category sync first item ACF data: " . json_encode($wpCategory['acf'] ?? 'null'));
                     $firstCategory = false;
                 }
             } else {
-                error_log("Failed to get ACF for category {$category['id']}: HTTP {$httpCode}");
+                error_log("Failed to get ACF for category {$category['id']} ({$category['name']}): HTTP {$httpCode}");
                 $category['acf'] = [];
+                $acfFailCount++;
             }
         } catch (\Exception $e) {
             error_log("Failed to get ACF for category {$category['id']}: " . $e->getMessage());
             $category['acf'] = [];
+            $acfFailCount++;
         }
     }
+    
+    error_log("Category sync: ACF fetch complete - {$acfSuccessCount} success, {$acfFailCount} failed");
     
     return $allCategories;
 }
@@ -609,7 +620,8 @@ public function getProductBrand(int $productId): ?array
 
     /**
      * Get taxonomy SEO fields from WordPress via ACF
-     * NOTE: The ACF field group must have "Show in REST API" enabled
+     * NOTE: Brands use taxonomy_description/taxonomy_seo_description
+     *       Categories use category_description/seo_description
      */
     public function getTaxonomySeo(string $taxonomy, int $termId): array
     {
@@ -631,8 +643,8 @@ public function getProductBrand(int $productId): ?array
             if ($httpCode !== 200) {
                 error_log("Failed to get taxonomy {$taxonomy}/{$termId}: HTTP {$httpCode} - {$response}");
                 return [
-                    'taxonomy_description' => '',
-                    'taxonomy_seo_description' => ''
+                    'description' => '',
+                    'meta_description' => ''
                 ];
             }
             
@@ -645,21 +657,32 @@ public function getProductBrand(int $productId): ?array
             // ACF fields are in the 'acf' key when "Show in REST API" is enabled
             $acf = $result['acf'] ?? [];
             
-            return [
-                'taxonomy_description' => $acf['taxonomy_description'] ?? '',
-                'taxonomy_seo_description' => $acf['taxonomy_seo_description'] ?? ''
-            ];
+            // Different field names for brands vs product categories
+            if ($taxonomy === 'product_cat') {
+                return [
+                    'description' => $acf['category_description'] ?? '',
+                    'meta_description' => $acf['seo_description'] ?? ''
+                ];
+            } else {
+                // Brands use taxonomy_description/taxonomy_seo_description
+                return [
+                    'description' => $acf['taxonomy_description'] ?? '',
+                    'meta_description' => $acf['taxonomy_seo_description'] ?? ''
+                ];
+            }
         } catch (\Exception $e) {
             error_log("Failed to get taxonomy SEO for {$taxonomy}/{$termId}: " . $e->getMessage());
             return [
-                'taxonomy_description' => '',
-                'taxonomy_seo_description' => ''
+                'description' => '',
+                'meta_description' => ''
             ];
         }
     }
 
     /**
      * Update taxonomy SEO fields in WordPress via ACF
+     * NOTE: Brands use taxonomy_description/taxonomy_seo_description
+     *       Categories use category_description/seo_description
      */
     public function updateTaxonomySeo(string $taxonomy, int $termId, array $seoData): bool
     {
@@ -667,12 +690,21 @@ public function getProductBrand(int $productId): ?array
             // Update via WordPress REST API with ACF fields
             $endpoint = "/wp/v2/{$taxonomy}/{$termId}";
             
-            $data = [
-                'acf' => [
-                    'taxonomy_description' => $seoData['taxonomy_description'] ?? '',
-                    'taxonomy_seo_description' => $seoData['taxonomy_seo_description'] ?? ''
-                ]
-            ];
+            // Different field names for brands vs product categories
+            if ($taxonomy === 'product_cat') {
+                $acfData = [
+                    'category_description' => $seoData['description'] ?? '',
+                    'seo_description' => $seoData['meta_description'] ?? ''
+                ];
+            } else {
+                // Brands use taxonomy_description/taxonomy_seo_description
+                $acfData = [
+                    'taxonomy_description' => $seoData['description'] ?? '',
+                    'taxonomy_seo_description' => $seoData['meta_description'] ?? ''
+                ];
+            }
+            
+            $data = ['acf' => $acfData];
             
             $result = $this->wpRequest('POST', $endpoint, $data);
             
