@@ -422,6 +422,53 @@ public function getAllBrands(): array
 }
 
 /**
+ * Get all product IDs that belong to a specific brand
+ * @param int $brandTermId WordPress brand term ID
+ * @return array List of WooCommerce product IDs
+ */
+public function getProductIdsByBrand(int $brandTermId): array
+{
+    $productIds = [];
+    $page = 1;
+    $perPage = 100;
+    
+    do {
+        // Query WooCommerce products API filtered by brand taxonomy
+        $url = $this->baseUrl . "/wc/v3/products?brand={$brandTermId}&per_page={$perPage}&page={$page}&status=publish";
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Authorization: Basic ' . base64_encode($this->wpUsername . ':' . $this->wpPassword)
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode !== 200) {
+            error_log("getProductIdsByBrand: Failed to get products for brand {$brandTermId}: HTTP {$httpCode}");
+            break;
+        }
+        
+        $products = json_decode($response, true);
+        if (empty($products)) {
+            break;
+        }
+        
+        foreach ($products as $product) {
+            $productIds[] = $product['id'];
+        }
+        
+        $page++;
+        
+    } while (count($products) === $perPage);
+    
+    return $productIds;
+}
+
+/**
  * Get all brand terms from WordPress REST API with ACF fields
  * NOTE: The ACF field group must have "Show in REST API" enabled in WordPress
  */
