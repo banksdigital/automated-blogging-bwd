@@ -741,6 +741,39 @@ PROMPT;
     }
 
     /**
+     * Clean up SEO content - remove newlines, em-dashes, and excessive whitespace
+     */
+    private function cleanSeoContent(string $text): string
+    {
+        // Handle literal escape sequences (from JSON that wasn't fully decoded)
+        $text = str_replace('\\n', ' ', $text);
+        
+        // Handle actual newline characters (from decoded JSON)
+        $text = str_replace(["\r\n", "\r", "\n"], ' ', $text);
+        
+        // Replace em-dashes and en-dashes (various Unicode forms and HTML entities) with commas
+        $text = str_replace(
+            ['—', '–', '―', '‒', '&mdash;', '&ndash;', '&#8212;', '&#8211;'],
+            [',', ',', ',', ',', ',', ',', ',', ','],
+            $text
+        );
+        
+        // Clean up multiple spaces
+        $text = preg_replace('/\s+/', ' ', $text);
+        
+        // Clean up comma followed by comma or space-comma (from dash replacement)
+        $text = preg_replace('/,(\s*,)+/', ',', $text);
+        
+        // Clean up comma at start of sentence (after period)
+        $text = preg_replace('/\.\s*,/', '.', $text);
+        
+        // Clean up double periods or comma-period
+        $text = str_replace(['..', ',.'], ['.', '.'], $text);
+        
+        return trim($text);
+    }
+
+    /**
      * Generate SEO content for a brand
      */
     public function generateBrandSeo(array $brand, array $categories): array
@@ -767,13 +800,18 @@ BRAND VOICE:
 
 {$writingGuidelines}
 
-CRITICAL RULES:
-1. ONLY mention categories from the provided "CATEGORIES WITH PRODUCTS" list - these are the ONLY categories where this brand actually has products
+CRITICAL FORMATTING RULES:
+1. Write as SINGLE PARAGRAPHS - no line breaks within each section
+2. NEVER use em-dashes (—) or en-dashes (–) - use commas instead
+3. Do NOT start sentences with "From" or "Whether"
+4. Use standard hyphens only for compound words (e.g., "well-crafted")
+5. Output clean HTML with no escape characters
+
+CONTENT RULES:
+1. ONLY mention categories from the provided list - these are the ONLY categories this brand has products in
 2. Create natural internal links using HTML anchor tags
-3. Write engaging, SEO-optimised content that reads naturally
-4. Do NOT invent or make up categories or product types not in the provided list
-5. Use British English spellings throughout
-6. Links MUST use the exact URLs provided
+3. Do NOT invent categories or product types not in the list
+4. Links MUST use the exact URLs provided
 PROMPT;
 
         $categoryListText = "";
@@ -782,56 +820,63 @@ PROMPT;
                 $categoryListText .= "- {$cat['name']}: {$cat['url']} ({$cat['product_count']} products)\n";
             }
         } else {
-            $categoryListText = "(No categories found - focus on the brand itself)\n";
+            $categoryListText = "(No categories found)\n";
         }
 
         $userPrompt = <<<PROMPT
 Generate SEO content for the brand: {$brand['name']}
 
 === CATEGORIES WITH PRODUCTS FROM THIS BRAND ===
-These are the ONLY categories you can mention (this brand actually has products in these):
 {$categoryListText}
 
-The brand page URL is: /brand/{$brand['slug']}/
+Brand page URL: /brand/{$brand['slug']}/
 
 Generate TWO pieces of content:
 
-1. DESCRIPTION (150-250 words):
-   - Engaging description of the brand and what makes it special
-   - MUST include 2-4 internal links to the categories listed above using HTML <a> tags
-   - Format: <a href="/product-category/category-slug/">Category Name</a>
-   - Focus on the brand's aesthetic, quality, and style
-   - Make it informative for shoppers browsing the brand
+1. INTRO (50-80 words, single paragraph):
+   - Brief introduction to the brand
+   - Include 2-3 internal links to categories using: <a href="/product-category/slug/">Category Name</a>
+   - Welcoming tone that tells shoppers what they'll find
 
-2. META_DESCRIPTION (150-160 characters max):
-   - Meta description for search engines
-   - Include brand name and key appeal
-   - Compelling call to action
+2. SEO_CONTENT (200-300 words, single paragraph):
+   - Detailed description of the brand's style, heritage, and appeal
+   - Include 3-5 internal links to categories
+   - Cover what makes this brand special, their design philosophy, and who the brand appeals to
+   - Naturally incorporate keywords related to the brand and product types
+   - Engaging, informative content that helps with search rankings
 
-Respond in this exact JSON format:
-{
-    "description": "The description content with HTML <a href='...'>...</a> links to categories...",
-    "meta_description": "The short meta description under 160 chars..."
-}
+Return ONLY valid JSON:
+{"intro": "short intro paragraph with links...", "seo_content": "longer detailed SEO paragraph with links..."}
 PROMPT;
 
         $response = $this->callApi($systemPrompt, $userPrompt);
         
+        // Clean response - remove markdown code blocks if present
+        $response = preg_replace('/^```json\s*/i', '', $response);
+        $response = preg_replace('/\s*```$/i', '', $response);
+        $response = trim($response);
+        
         // Parse JSON response
         $content = json_decode($response, true);
         
-        if (!$content || !isset($content['description'])) {
+        if (!$content || !isset($content['intro'])) {
             // Try to extract from text if JSON parsing fails
-            preg_match('/"description"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $descMatch);
-            preg_match('/"meta_description"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $metaMatch);
+            preg_match('/"intro"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $introMatch);
+            preg_match('/"seo_content"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $seoMatch);
             
             $content = [
-                'description' => $descMatch[1] ?? '',
-                'meta_description' => $metaMatch[1] ?? ''
+                'intro' => $introMatch[1] ?? '',
+                'seo_content' => $seoMatch[1] ?? ''
             ];
         }
         
-        return $content;
+        // Clean up content
+        $result = [
+            'description' => isset($content['intro']) ? $this->cleanSeoContent($content['intro']) : '',
+            'seo_content' => isset($content['seo_content']) ? $this->cleanSeoContent($content['seo_content']) : ''
+        ];
+        
+        return $result;
     }
 
     /**
@@ -850,7 +895,7 @@ PROMPT;
             ];
         }, $brands);
         
-        // Build related category links
+        // Build related category links (parent + siblings or children)
         $categoryLinks = array_map(function($cat) {
             return [
                 'name' => $cat['name'],
@@ -869,14 +914,19 @@ BRAND VOICE:
 
 {$writingGuidelines}
 
-CRITICAL RULES:
-1. ONLY mention brands from the provided "BRANDS WITH PRODUCTS" list - these are the ONLY brands that actually have products in this category
-2. ONLY link to categories from the provided "RELATED CATEGORIES" list if you mention other categories
+CRITICAL FORMATTING RULES:
+1. Write as SINGLE PARAGRAPHS - no line breaks within each section
+2. NEVER use em-dashes (—) or en-dashes (–) - use commas instead
+3. Do NOT start sentences with "From" or "Whether"
+4. Use standard hyphens only for compound words (e.g., "well-crafted")
+5. Output clean HTML with no escape characters
+
+CONTENT RULES:
+1. ONLY mention brands from the provided list - these are the ONLY brands with products in this category
+2. ONLY link to categories from the provided "RELATED CATEGORIES" list
 3. Create natural internal links using HTML anchor tags
-4. Write engaging, SEO-optimised content that reads naturally
-5. Do NOT invent or make up brand names or categories not in the provided lists
-6. Use British English spellings throughout
-7. Links MUST use the exact URLs provided
+4. Do NOT invent brand names or categories not in the lists
+5. Links MUST use the exact URLs provided
 PROMPT;
 
         $brandListText = "";
@@ -885,7 +935,7 @@ PROMPT;
                 $brandListText .= "- {$brand['name']}: {$brand['url']} ({$brand['product_count']} products)\n";
             }
         } else {
-            $brandListText = "(No brands found - focus on the category itself)\n";
+            $brandListText = "(No brands found)\n";
         }
         
         $categoryListText = "";
@@ -894,60 +944,66 @@ PROMPT;
                 $categoryListText .= "- {$cat['name']}: {$cat['url']}\n";
             }
         } else {
-            $categoryListText = "(No related categories to link to)\n";
+            $categoryListText = "(No related categories)\n";
         }
 
         $userPrompt = <<<PROMPT
 Generate SEO content for the category: {$category['name']}
 
 === BRANDS WITH PRODUCTS IN THIS CATEGORY ===
-These are the ONLY brands you can mention (they actually stock products here):
 {$brandListText}
 
-=== RELATED CATEGORIES ===
-You may also link to these related categories:
+=== RELATED CATEGORIES (parent, siblings, or children) ===
 {$categoryListText}
 
-The category page URL is: /product-category/{$category['slug']}/
+Category URL: /product-category/{$category['slug']}/
 
 Generate TWO pieces of content:
 
-1. DESCRIPTION (150-250 words):
-   - Engaging description of this category and what shoppers can find
-   - MUST include 2-4 internal links to brands from the list above using HTML <a> tags
-   - Format: <a href="/brand/brand-slug/">Brand Name</a>
-   - May include 1-2 links to related categories if relevant
-   - Describe the styles, occasions, and appeal of products in this category
-   - Make it informative and inspiring for shoppers
+1. INTRO (50-80 words, single paragraph):
+   - Brief introduction to this category
+   - Include 1-2 links to related categories (parent or siblings) if available
+   - Welcoming tone that tells shoppers what they'll find in this category
 
-2. META_DESCRIPTION (150-160 characters max):
-   - Meta description for search engines
-   - Include category name and key selling points
-   - Compelling call to action
+2. SEO_CONTENT (200-300 words, single paragraph):
+   - Detailed description of products in this category
+   - Include 3-5 internal links to brands from the list above using: <a href="/brand/slug/">Brand Name</a>
+   - May include 1-2 additional links to related categories
+   - Cover styles, occasions, and what makes these products appealing
+   - Naturally incorporate keywords related to the category and product types
+   - Engaging, informative content that helps with search rankings
 
-Respond in this exact JSON format:
-{
-    "description": "The description content with HTML <a href='...'>...</a> links to brands...",
-    "meta_description": "The short meta description under 160 chars..."
-}
+Return ONLY valid JSON:
+{"intro": "short intro paragraph with category links...", "seo_content": "longer detailed SEO paragraph with brand links..."}
 PROMPT;
 
         $response = $this->callApi($systemPrompt, $userPrompt);
         
+        // Clean response - remove markdown code blocks if present
+        $response = preg_replace('/^```json\s*/i', '', $response);
+        $response = preg_replace('/\s*```$/i', '', $response);
+        $response = trim($response);
+        
         // Parse JSON response
         $content = json_decode($response, true);
         
-        if (!$content || !isset($content['description'])) {
+        if (!$content || !isset($content['intro'])) {
             // Try to extract from text if JSON parsing fails
-            preg_match('/"description"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $descMatch);
-            preg_match('/"meta_description"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $metaMatch);
+            preg_match('/"intro"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $introMatch);
+            preg_match('/"seo_content"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $seoMatch);
             
             $content = [
-                'description' => $descMatch[1] ?? '',
-                'meta_description' => $metaMatch[1] ?? ''
+                'intro' => $introMatch[1] ?? '',
+                'seo_content' => $seoMatch[1] ?? ''
             ];
         }
         
-        return $content;
+        // Clean up content
+        $result = [
+            'description' => isset($content['intro']) ? $this->cleanSeoContent($content['intro']) : '',
+            'seo_content' => isset($content['seo_content']) ? $this->cleanSeoContent($content['seo_content']) : ''
+        ];
+        
+        return $result;
     }
 }

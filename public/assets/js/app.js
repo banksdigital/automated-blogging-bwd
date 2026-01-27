@@ -1571,15 +1571,15 @@ const App = {
                         <input type="hidden" id="seo-edit-type">
                         
                         <div class="form-group">
-                            <label class="form-label">Description</label>
-                            <textarea id="seo-description" class="form-input form-textarea" rows="8" placeholder="Main description with internal links (150-250 words)..."></textarea>
-                            <small style="color:var(--text-muted);font-size:11px;">HTML allowed. Include internal links to related categories/brands.</small>
+                            <label class="form-label">Intro Description <span style="color:var(--text-muted);font-weight:normal;">(50-80 words)</span></label>
+                            <textarea id="seo-description" class="form-input form-textarea" rows="4" placeholder="Brief intro paragraph with links to related categories..."></textarea>
+                            <small style="color:var(--text-muted);font-size:11px;">Short introduction. Include 1-2 links to parent/related categories.</small>
                         </div>
                         
                         <div class="form-group">
-                            <label class="form-label">Meta Description</label>
-                            <textarea id="seo-meta-description" class="form-input form-textarea" rows="2" placeholder="Short meta description for search engines (150-160 chars)..."></textarea>
-                            <small style="color:var(--text-muted);font-size:11px;"><span id="meta-char-count">0</span>/160 characters</small>
+                            <label class="form-label">SEO Content <span style="color:var(--text-muted);font-weight:normal;">(200-300 words)</span></label>
+                            <textarea id="seo-meta-description" class="form-input form-textarea" rows="10" placeholder="Detailed SEO content with brand/category links..."></textarea>
+                            <small style="color:var(--text-muted);font-size:11px;">Detailed SEO content. Include 3-5 links to brands or related categories. <span id="meta-char-count">0</span> words</small>
                         </div>
                         
                         <div id="seo-related-info" style="margin-bottom:20px;padding:16px;background:var(--bg-tertiary);border-radius:8px;"></div>
@@ -1598,9 +1598,10 @@ const App = {
                 </div>
             `;
             
-            // Add character counter for meta description
+            // Add word counter for SEO content
             document.getElementById('seo-meta-description').addEventListener('input', (e) => {
-                document.getElementById('meta-char-count').textContent = e.target.value.length;
+                const wordCount = e.target.value.trim() ? e.target.value.trim().split(/\s+/).length : 0;
+                document.getElementById('meta-char-count').textContent = wordCount;
             });
             
             this.loadTaxonomySeoTab();
@@ -1817,7 +1818,8 @@ const App = {
             document.getElementById('seo-edit-type').value = 'brand';
             document.getElementById('seo-description').value = brand.seo_description || '';
             document.getElementById('seo-meta-description').value = brand.seo_meta_description || '';
-            document.getElementById('meta-char-count').textContent = (brand.seo_meta_description || '').length;
+            const wordCount = (brand.seo_meta_description || '').trim() ? (brand.seo_meta_description || '').trim().split(/\s+/).length : 0;
+            document.getElementById('meta-char-count').textContent = wordCount;
             
             // Show related categories
             const relatedHtml = brand.categories && brand.categories.length > 0
@@ -1840,7 +1842,8 @@ const App = {
             document.getElementById('seo-edit-type').value = 'category';
             document.getElementById('seo-description').value = category.seo_description || '';
             document.getElementById('seo-meta-description').value = category.seo_meta_description || '';
-            document.getElementById('meta-char-count').textContent = (category.seo_meta_description || '').length;
+            const wordCount = (category.seo_meta_description || '').trim() ? (category.seo_meta_description || '').trim().split(/\s+/).length : 0;
+            document.getElementById('meta-char-count').textContent = wordCount;
             
             // Show related brands
             const relatedHtml = category.brands && category.brands.length > 0
@@ -1906,7 +1909,8 @@ const App = {
             // Update the form with pulled data (using generic keys from API)
             document.getElementById('seo-description').value = result.description || '';
             document.getElementById('seo-meta-description').value = result.meta_description || '';
-            document.getElementById('meta-char-count').textContent = (result.meta_description || '').length;
+            const wordCount = (result.meta_description || '').trim() ? (result.meta_description || '').trim().split(/\s+/).length : 0;
+            document.getElementById('meta-char-count').textContent = wordCount;
             
             this.toast('SEO content pulled from WordPress!', 'success');
         } catch (error) {

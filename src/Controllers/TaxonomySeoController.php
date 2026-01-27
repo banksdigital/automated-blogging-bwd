@@ -221,9 +221,11 @@ class TaxonomySeoController
             $content = $claudeService->generateBrandSeo($brand, $categories);
             
             // Save to database
+            // description = intro (taxonomy_description field)
+            // seo_content = detailed SEO content (taxonomy_seo_description field)
             Database::execute(
                 "UPDATE wp_brands SET seo_description = ?, seo_meta_description = ?, seo_updated_at = NOW() WHERE id = ?",
-                [$content['description'], $content['meta_description'], $id]
+                [$content['description'], $content['seo_content'], $id]
             );
             
             echo json_encode([
@@ -393,9 +395,11 @@ class TaxonomySeoController
             $content = $claudeService->generateCategorySeo($category, $brands, $relatedCategories);
             
             // Save to database
+            // description = intro (category_description field)
+            // seo_content = detailed SEO content (seo_description field)
             Database::execute(
                 "UPDATE wp_product_categories SET seo_description = ?, seo_meta_description = ?, seo_updated_at = NOW() WHERE id = ?",
-                [$content['description'], $content['meta_description'], $id]
+                [$content['description'], $content['seo_content'], $id]
             );
             
             echo json_encode([
