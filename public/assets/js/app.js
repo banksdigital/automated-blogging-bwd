@@ -1913,11 +1913,11 @@ const App = {
                 results.textContent += `Testing brand: "${firstBrand.name}" (wp_term_id: ${firstBrand.wp_term_id})\n`;
                 results.textContent += '─'.repeat(50) + '\n\n';
                 
-                // Call debug endpoint
-                const debugResult = await this.api(`/wordpress/debug/brand/${firstBrand.wp_term_id}`);
+                // Call debug endpoint - returns data directly (api() returns data.data)
+                const debug = await this.api(`/wordpress/debug/brand/${firstBrand.wp_term_id}`);
                 
                 // Show single endpoint results
-                const single = debugResult.debug.single_endpoint;
+                const single = debug.single_endpoint;
                 results.textContent += `📡 Single Brand Endpoint: ${single.url}\n`;
                 results.textContent += `   HTTP Status: ${single.http_code}\n`;
                 results.textContent += `   Has 'acf' key: ${single.has_acf_key ? '✅ YES' : '❌ NO'}\n`;
@@ -1929,7 +1929,7 @@ const App = {
                 results.textContent += '\n';
                 
                 // Show list endpoint results
-                const list = debugResult.debug.list_endpoint;
+                const list = debug.list_endpoint;
                 results.textContent += `📡 Brand List Endpoint: ${list.url}\n`;
                 results.textContent += `   HTTP Status: ${list.http_code}\n`;
                 results.textContent += `   First item has 'acf' key: ${list.first_item_has_acf ? '✅ YES' : '❌ NO'}\n`;

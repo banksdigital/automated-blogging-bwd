@@ -739,7 +739,7 @@ public function syncProducts(): void
             
             echo json_encode([
                 'success' => true,
-                'debug' => [
+                'data' => [
                     'single_endpoint' => [
                         'url' => $url,
                         'http_code' => $httpCode,
@@ -766,7 +766,7 @@ public function syncProducts(): void
             ], JSON_PRETTY_PRINT);
         } catch (\Exception $e) {
             http_response_code(500);
-            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
         }
     }
 
@@ -799,7 +799,7 @@ public function syncProducts(): void
             
             echo json_encode([
                 'success' => true,
-                'debug' => [
+                'data' => [
                     'url' => $url,
                     'http_code' => $httpCode,
                     'curl_error' => $curlError ?: null,
@@ -817,7 +817,7 @@ public function syncProducts(): void
             ], JSON_PRETTY_PRINT);
         } catch (\Exception $e) {
             http_response_code(500);
-            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
         }
     }
 }
