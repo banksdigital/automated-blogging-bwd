@@ -66,18 +66,21 @@ class TaxonomySeoController
                     c.wp_term_id,
                     c.name,
                     c.slug,
+                    c.parent_id,
                     c.count as product_count,
                     c.seo_description,
                     c.seo_meta_description,
                     c.seo_updated_at,
+                    p.name as parent_name,
                     (SELECT COUNT(DISTINCT b.id) 
-                     FROM wp_products p 
-                     JOIN wp_brands b ON p.brand_id = b.id
-                     WHERE JSON_CONTAINS(p.category_slugs, CONCAT('\"', c.slug, '\"')) AND p.stock_status = 'instock'
+                     FROM wp_products pr 
+                     JOIN wp_brands b ON pr.brand_id = b.id
+                     WHERE JSON_CONTAINS(pr.category_slugs, CONCAT('\"', c.slug, '\"')) AND pr.stock_status = 'instock'
                     ) as brand_count
                  FROM wp_product_categories c
-                 WHERE c.count > 0 AND c.parent_id = 0
-                 ORDER BY c.name ASC"
+                 LEFT JOIN wp_product_categories p ON c.parent_id = p.wp_term_id
+                 WHERE c.count > 0
+                 ORDER BY COALESCE(p.name, c.name), c.parent_id, c.name ASC"
             );
             
             echo json_encode([

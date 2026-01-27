@@ -159,6 +159,7 @@ const App = {
                         <p class="page-subtitle">${new Date().toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
                     </div>
                     <div style="display:flex;gap:8px;">
+                        <button class="btn btn-secondary" onclick="App.navigate('/taxonomy-seo')">🔍 Taxonomy SEO</button>
                         <button class="btn btn-secondary" onclick="App.navigate('/calendar-events')">📅 Calendar Events</button>
                         <button class="btn btn-secondary" onclick="App.navigate('/autopilot')">⚙ Auto-Pilot</button>
                         <button class="btn btn-primary" onclick="App.navigate('/posts/new')">+ New Post</button>
@@ -1712,10 +1713,12 @@ const App = {
                         </thead>
                         <tbody>
                             ${categories.map(c => `
-                                <tr style="border-bottom:1px solid var(--border-default);">
-                                    <td style="padding:12px 16px;">
-                                        <div style="font-weight:500;">${this.escapeHtml(c.name)}</div>
-                                        <div style="font-size:12px;color:var(--text-secondary);">/product-category/${c.slug}/</div>
+                                <tr style="border-bottom:1px solid var(--border-default);${c.parent_id ? 'background:var(--bg-tertiary);' : ''}">
+                                    <td style="padding:12px 16px;${c.parent_id ? 'padding-left:32px;' : ''}">
+                                        <div style="font-weight:500;">${c.parent_id ? '↳ ' : ''}${this.escapeHtml(c.name)}</div>
+                                        <div style="font-size:12px;color:var(--text-secondary);">
+                                            ${c.parent_name ? `<span style="color:var(--text-muted);">${this.escapeHtml(c.parent_name)} → </span>` : ''}/product-category/${c.slug}/
+                                        </div>
                                     </td>
                                     <td style="padding:12px 8px;text-align:center;">${c.product_count || 0}</td>
                                     <td style="padding:12px 8px;text-align:center;">${c.brand_count || 0}</td>
