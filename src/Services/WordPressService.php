@@ -204,6 +204,33 @@ class WordPressService
     }
 
     /**
+     * Get all product categories (paginated)
+     */
+    public function getAllProductCategories(): array
+    {
+        $allCategories = [];
+        $page = 1;
+        $perPage = 100;
+        
+        do {
+            $categories = $this->wcRequest('GET', '/wc/v3/products/categories', [
+                'per_page' => $perPage,
+                'page' => $page,
+                'hide_empty' => false
+            ]);
+            
+            $allCategories = array_merge($allCategories, $categories);
+            $page++;
+            
+            // Safety limit
+            if ($page > 20) break;
+            
+        } while (count($categories) === $perPage);
+        
+        return $allCategories;
+    }
+
+    /**
      * Get product brands (custom taxonomy)
      */
     public function getProductBrands(): array
@@ -395,6 +422,153 @@ public function getAllBrands(): array
 }
 
 /**
+ * Get all brand terms from WordPress REST API with ACF fields
+ * NOTE: The ACF field group must have "Show in REST API" enabled in WordPress
+ */
+public function getAllBrandsWithAcf(): array
+{
+    $brands = [];
+    $page = 1;
+    $perPage = 100;
+    
+    do {
+        // ACF fields appear automatically in response when "Show in REST API" is enabled
+        $url = rtrim($this->baseUrl, '/') . "/wp/v2/brand?per_page={$perPage}&page={$page}";
+        
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Authorization: Basic ' . base64_encode($this->wpUsername . ':' . $this->wpPassword)
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode !== 200) {
+            error_log("Failed to fetch brands page {$page}: HTTP {$httpCode} - Response: {$response}");
+            break;
+        }
+        
+        $pageBrands = json_decode($response, true);
+        if (empty($pageBrands) || !is_array($pageBrands)) {
+            break;
+        }
+        
+        // Log first brand to help debug ACF field availability
+        if ($page === 1 && !empty($pageBrands[0])) {
+            $hasAcf = isset($pageBrands[0]['acf']) ? 'yes' : 'no';
+            $acfFields = isset($pageBrands[0]['acf']) ? implode(', ', array_keys($pageBrands[0]['acf'])) : 'none';
+            error_log("Brand sync: ACF present={$hasAcf}, fields={$acfFields}");
+        }
+        
+        $brands = array_merge($brands, $pageBrands);
+        $page++;
+        
+        // Safety limit
+        if ($page > 20) break;
+        
+    } while (count($pageBrands) === $perPage);
+    
+    return $brands;
+}
+
+/**
+ * Get all product categories with ACF fields
+ * NOTE: The ACF field group must have "Show in REST API" enabled in WordPress
+ */
+public function getAllProductCategoriesWithAcf(): array
+{
+    $allCategories = [];
+    $page = 1;
+    $perPage = 100;
+    
+    // First, get basic category data from WooCommerce
+    do {
+        $categories = $this->wcRequest('GET', '/wc/v3/products/categories', [
+            'per_page' => $perPage,
+            'page' => $page,
+            'hide_empty' => false
+        ]);
+        
+        $allCategories = array_merge($allCategories, $categories);
+        $page++;
+        
+        if ($page > 20) break;
+        
+    } while (count($categories) === $perPage);
+    
+    // Now fetch ACF fields for each category from WordPress REST API
+    // WooCommerce product categories use taxonomy 'product_cat'
+    $firstCategory = true;
+    foreach ($allCategories as &$category) {
+        try {
+            // Use WordPress REST API endpoint for product_cat taxonomy
+            $url = rtrim($this->baseUrl, '/') . "/wp/v2/product_cat/{$category['id']}";
+            
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Basic ' . base64_encode($this->wpUsername . ':' . $this->wpPassword)
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            if ($httpCode === 200) {
+                $wpCategory = json_decode($response, true);
+                $category['acf'] = $wpCategory['acf'] ?? [];
+                
+                // Log first category to help debug
+                if ($firstCategory) {
+                    $hasAcf = isset($wpCategory['acf']) ? 'yes' : 'no';
+                    $acfFields = isset($wpCategory['acf']) ? implode(', ', array_keys($wpCategory['acf'])) : 'none';
+                    error_log("Category sync: ACF present={$hasAcf}, fields={$acfFields}");
+                    $firstCategory = false;
+                }
+            } else {
+                error_log("Failed to get ACF for category {$category['id']}: HTTP {$httpCode}");
+                $category['acf'] = [];
+            }
+        } catch (\Exception $e) {
+            error_log("Failed to get ACF for category {$category['id']}: " . $e->getMessage());
+            $category['acf'] = [];
+        }
+    }
+    
+    return $allCategories;
+}
+
+/**
+ * Get ACF fields for a specific taxonomy term
+ */
+public function getTaxonomyAcfFields(string $taxonomy, int $termId): array
+{
+    $url = rtrim($this->baseUrl, '/') . "/wp/v2/{$taxonomy}/{$termId}?acf_format=standard";
+    
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Content-Type: application/json',
+        'Authorization: Basic ' . base64_encode($this->wpUsername . ':' . $this->wpPassword)
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode !== 200) {
+        return [];
+    }
+    
+    $data = json_decode($response, true);
+    return $data['acf'] ?? [];
+}
+
+/**
  * Get brand for a specific product from WordPress REST API
  */
 public function getProductBrand(int $productId): ?array
@@ -427,19 +601,44 @@ public function getProductBrand(int $productId): ?array
 
     /**
      * Get taxonomy SEO fields from WordPress via ACF
+     * NOTE: The ACF field group must have "Show in REST API" enabled
      */
     public function getTaxonomySeo(string $taxonomy, int $termId): array
     {
         try {
-            // Use the WordPress REST API to get term with ACF fields
-            $endpoint = "/wp/v2/{$taxonomy}/{$termId}";
-            $result = $this->wpRequest('GET', $endpoint);
+            // ACF fields appear in the standard REST response when enabled
+            $url = rtrim($this->baseUrl, '/') . "/wp/v2/{$taxonomy}/{$termId}";
             
-            // ACF fields are typically in the 'acf' key or 'meta' key
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Basic ' . base64_encode($this->wpUsername . ':' . $this->wpPassword)
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            if ($httpCode !== 200) {
+                error_log("Failed to get taxonomy {$taxonomy}/{$termId}: HTTP {$httpCode} - {$response}");
+                return [
+                    'taxonomy_description' => '',
+                    'taxonomy_seo_description' => ''
+                ];
+            }
+            
+            $result = json_decode($response, true);
+            
+            // Debug: log what we received
+            $hasAcf = isset($result['acf']) ? 'yes' : 'no';
+            error_log("getTaxonomySeo {$taxonomy}/{$termId}: ACF present={$hasAcf}");
+            
+            // ACF fields are in the 'acf' key when "Show in REST API" is enabled
             $acf = $result['acf'] ?? [];
             
             return [
-                'taxonomy_description' => $acf['taxonomy_description'] ?? $result['description'] ?? '',
+                'taxonomy_description' => $acf['taxonomy_description'] ?? '',
                 'taxonomy_seo_description' => $acf['taxonomy_seo_description'] ?? ''
             ];
         } catch (\Exception $e) {

@@ -131,31 +131,67 @@ class WordPressController
     {
         try {
             $service = new WordPressService($this->config);
-            $brands = $service->getAllBrands();
+            $brands = $service->getAllBrandsWithAcf();
 
             $synced = 0;
+            $withSeo = 0;
+            $hasAcfFields = false;
+            
             foreach ($brands as $brand) {
+                // Check if any brand has ACF fields (indicates REST API is enabled)
+                if (isset($brand['acf'])) {
+                    $hasAcfFields = true;
+                }
+                
+                // Extract ACF fields if present
+                $acf = $brand['acf'] ?? [];
+                $seoDescription = $acf['taxonomy_description'] ?? null;
+                $seoMetaDescription = $acf['taxonomy_seo_description'] ?? null;
+                
+                // Track if this brand has SEO content
+                if ($seoDescription || $seoMetaDescription) {
+                    $withSeo++;
+                }
+                
                 Database::execute(
-                    "INSERT INTO wp_brands (wp_term_id, name, slug, description, count, synced_at)
-                     VALUES (?, ?, ?, ?, ?, NOW())
+                    "INSERT INTO wp_brands (wp_term_id, name, slug, description, count, seo_description, seo_meta_description, seo_updated_at, synced_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
                      ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug), 
-                     description = VALUES(description), count = VALUES(count), synced_at = NOW()",
+                     description = VALUES(description), count = VALUES(count),
+                     seo_description = COALESCE(VALUES(seo_description), seo_description),
+                     seo_meta_description = COALESCE(VALUES(seo_meta_description), seo_meta_description),
+                     seo_updated_at = IF(VALUES(seo_description) IS NOT NULL OR VALUES(seo_meta_description) IS NOT NULL, NOW(), seo_updated_at),
+                     synced_at = NOW()",
                     [
                         $brand['id'],
                         html_entity_decode($brand['name']),
                         $brand['slug'],
                         $brand['description'] ?? null,
-                        $brand['count'] ?? 0
+                        $brand['count'] ?? 0,
+                        $seoDescription,
+                        $seoMetaDescription,
+                        ($seoDescription || $seoMetaDescription) ? date('Y-m-d H:i:s') : null
                     ]
                 );
                 $synced++;
             }
 
-            $this->logActivity('sync_brands', 'system', null, ['count' => $synced]);
+            $this->logActivity('sync_brands', 'system', null, ['count' => $synced, 'with_seo' => $withSeo]);
+
+            // Build message with warning if ACF fields not found
+            $message = "Synced {$synced} brands ({$withSeo} with SEO content)";
+            if (!$hasAcfFields && $synced > 0) {
+                $message .= ". ⚠️ ACF fields not found - enable 'Show in REST API' in ACF field group settings.";
+            }
 
             echo json_encode([
                 'success' => true,
-                'data' => ['synced' => $synced, 'message' => "Synced {$synced} brands"]
+                'data' => [
+                    'synced' => $synced, 
+                    'with_seo' => $withSeo,
+                    'acf_enabled' => $hasAcfFields,
+                    'message' => $message
+                ]
             ]);
 
         } catch (\Exception $e) {
@@ -175,32 +211,68 @@ class WordPressController
     {
         try {
             $service = new WordPressService($this->config);
-            $categories = $service->getAllProductCategories();
+            $categories = $service->getAllProductCategoriesWithAcf();
 
             $synced = 0;
+            $withSeo = 0;
+            $hasAcfFields = false;
+            
             foreach ($categories as $cat) {
+                // Check if any category has ACF fields
+                if (isset($cat['acf']) && !empty($cat['acf'])) {
+                    $hasAcfFields = true;
+                }
+                
+                // Extract ACF fields if present
+                $acf = $cat['acf'] ?? [];
+                $seoDescription = $acf['taxonomy_description'] ?? null;
+                $seoMetaDescription = $acf['taxonomy_seo_description'] ?? null;
+                
+                // Track if this category has SEO content
+                if ($seoDescription || $seoMetaDescription) {
+                    $withSeo++;
+                }
+                
                 Database::execute(
-                    "INSERT INTO wp_product_categories (wp_term_id, parent_id, name, slug, description, count, synced_at)
-                     VALUES (?, ?, ?, ?, ?, ?, NOW())
+                    "INSERT INTO wp_product_categories (wp_term_id, parent_id, name, slug, description, count, seo_description, seo_meta_description, seo_updated_at, synced_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                      ON DUPLICATE KEY UPDATE parent_id = VALUES(parent_id), name = VALUES(name), 
-                     slug = VALUES(slug), description = VALUES(description), count = VALUES(count), synced_at = NOW()",
+                     slug = VALUES(slug), description = VALUES(description), count = VALUES(count),
+                     seo_description = COALESCE(VALUES(seo_description), seo_description),
+                     seo_meta_description = COALESCE(VALUES(seo_meta_description), seo_meta_description),
+                     seo_updated_at = IF(VALUES(seo_description) IS NOT NULL OR VALUES(seo_meta_description) IS NOT NULL, NOW(), seo_updated_at),
+                     synced_at = NOW()",
                     [
                         $cat['id'],
                         $cat['parent'] ?? 0,
                         html_entity_decode($cat['name']),
                         $cat['slug'],
                         $cat['description'] ?? null,
-                        $cat['count'] ?? 0
+                        $cat['count'] ?? 0,
+                        $seoDescription,
+                        $seoMetaDescription,
+                        ($seoDescription || $seoMetaDescription) ? date('Y-m-d H:i:s') : null
                     ]
                 );
                 $synced++;
             }
 
-            $this->logActivity('sync_product_categories', 'system', null, ['count' => $synced]);
+            $this->logActivity('sync_product_categories', 'system', null, ['count' => $synced, 'with_seo' => $withSeo]);
+
+            // Build message with warning if ACF fields not found
+            $message = "Synced {$synced} product categories ({$withSeo} with SEO content)";
+            if (!$hasAcfFields && $synced > 0) {
+                $message .= ". ⚠️ ACF fields not found - enable 'Show in REST API' in ACF field group settings.";
+            }
 
             echo json_encode([
                 'success' => true,
-                'data' => ['synced' => $synced, 'message' => "Synced {$synced} product categories"]
+                'data' => [
+                    'synced' => $synced,
+                    'with_seo' => $withSeo,
+                    'acf_enabled' => $hasAcfFields,
+                    'message' => $message
+                ]
             ]);
 
         } catch (\Exception $e) {
