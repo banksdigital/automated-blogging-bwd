@@ -74,26 +74,16 @@ class WordPressService
             'title' => $data['title'],
             'content' => $data['content'],
             'status' => $data['status'] ?? 'draft',
+            'categories' => $data['categories'] ?? [],
+            'author' => $data['author'] ?? null,
         ];
         
-        // Only add categories if not empty
-        if (!empty($data['categories'])) {
-            $payload['categories'] = $data['categories'];
-        }
-        
-        // Only add author if set
-        if (!empty($data['author'])) {
-            $payload['author'] = $data['author'];
-        }
-        
-        // Add Yoast meta description if provided
         if (!empty($data['meta_description'])) {
             $payload['meta'] = [
                 '_yoast_wpseo_metadesc' => $data['meta_description']
             ];
         }
         
-        // Add date if provided (must be ISO 8601 format)
         if (!empty($data['date'])) {
             $payload['date'] = $data['date'];
             if ($payload['status'] === 'publish') {
@@ -118,147 +108,6 @@ class WordPressService
     public function getPost(int $postId): array
     {
         return $this->wpRequest('GET', "/wp/v2/posts/{$postId}");
-    }
-    
-    /**
-     * Build Visual Composer shortcode content from post data
-     */
-    public function buildVisualComposerContent(array $post, array $sections): string
-    {
-        $content = '[vc_row columns="1"][vc_column]';
-        
-        // Intro
-        if (!empty($post['intro_content'])) {
-            $content .= '[vc_column_text]' . $this->formatContent($post['intro_content']) . '[/vc_column_text]';
-        }
-        
-        // Divider image (using a placeholder - you may want to set a specific image ID)
-        $dividerImage = '[us_image image="57585" align="center" css="%7B%22default%22%3A%7B%22max-width%22%3A%22300px%22%2C%22margin-left%22%3A%22auto%22%2C%22margin-top%22%3A%223.5rem%22%2C%22margin-bottom%22%3A%223.5rem%22%2C%22margin-right%22%3A%22auto%22%7D%7D"]';
-        
-        // Sections
-        foreach ($sections as $section) {
-            // Add divider before section
-            $content .= $dividerImage;
-            
-            // Section text block with styling
-            $content .= '[vc_column_text css="%7B%22default%22%3A%7B%22background-color%22%3A%22_content_bg_alt%22%2C%22padding-left%22%3A%222.5rem%22%2C%22padding-top%22%3A%222.5rem%22%2C%22padding-bottom%22%3A%222.5rem%22%2C%22padding-right%22%3A%222.5rem%22%7D%2C%22mobiles%22%3A%7B%22padding-left%22%3A%221.5rem%22%2C%22padding-right%22%3A%221.5rem%22%7D%7D"]';
-            
-            // Heading
-            if (!empty($section['heading'])) {
-                $content .= '<h2>' . htmlspecialchars($section['heading']) . '</h2>' . "\n";
-            }
-            
-            // Content
-            if (!empty($section['content'])) {
-                $content .= $this->formatContent($section['content']);
-            }
-            
-            // CTA link
-            if (!empty($section['cta_text']) && !empty($section['cta_url'])) {
-                $content .= "\n\n" . '<strong><a href="' . htmlspecialchars($section['cta_url']) . '" target="_blank" rel="noopener">' . htmlspecialchars($section['cta_text']) . '</a></strong>';
-            }
-            
-            $content .= '[/vc_column_text]';
-            
-            // Product carousel if brand is set
-            if (!empty($section['carousel_brand_id'])) {
-                $content .= $this->buildProductCarousel($section['carousel_brand_id'], $section['carousel_category_id'] ?? null);
-            }
-        }
-        
-        // Outro
-        if (!empty($post['outro_content'])) {
-            $content .= $dividerImage;
-            $content .= '[vc_column_text css="%7B%22default%22%3A%7B%22background-color%22%3A%22_content_bg_alt%22%2C%22padding-left%22%3A%222.5rem%22%2C%22padding-top%22%3A%222.5rem%22%2C%22padding-bottom%22%3A%222.5rem%22%2C%22padding-right%22%3A%222.5rem%22%7D%7D"]';
-            $content .= $this->formatContent($post['outro_content']);
-            $content .= '[/vc_column_text]';
-        }
-        
-        $content .= '[/vc_column][/vc_row]';
-        
-        return $content;
-    }
-    
-    /**
-     * Build product carousel shortcode
-     */
-    private function buildProductCarousel(int $brandId, ?int $categoryId = null): string
-    {
-        // Build tax_query JSON
-        $taxQuery = [];
-        
-        // Brand filter
-        $taxQuery[] = [
-            'operator' => 'IN',
-            'taxonomy' => 'brand',
-            'terms' => (string)$brandId,
-            'include_children' => 0
-        ];
-        
-        // Category filter (if provided)
-        if ($categoryId) {
-            $taxQuery[] = [
-                'operator' => 'IN',
-                'taxonomy' => 'product_cat',
-                'terms' => (string)$categoryId,
-                'include_children' => 0
-            ];
-        }
-        
-        // URL encode the JSON
-        $taxQueryEncoded = urlencode(json_encode($taxQuery));
-        
-        $carousel = '[us_product_carousel';
-        $carousel .= ' items_layout="443"';
-        $carousel .= ' items_gap="0.25rem"';
-        $carousel .= ' dots="1"';
-        $carousel .= ' dots_style="dash"';
-        $carousel .= ' responsive="%5B%7B%22breakpoint%22%3A%22mobiles%22%2C%22breakpoint_width%22%3A%221024px%22%2C%22items%22%3A%221%22%2C%22items_offset%22%3A%2250px%22%2C%22center_item%22%3A0%2C%22autoheight%22%3A0%2C%22loop%22%3A0%2C%22autoplay%22%3A0%2C%22arrows%22%3A0%2C%22dots%22%3A1%7D%5D"';
-        $carousel .= ' css="%7B%22default%22%3A%7B%22margin-top%22%3A%222.5rem%22%2C%22margin-bottom%22%3A%222.5rem%22%7D%7D"';
-        $carousel .= ' next_item_offset="50px"';
-        $carousel .= ' arrows="1"';
-        $carousel .= ' arrows_style="10"';
-        $carousel .= ' no_items_action="page_block"';
-        $carousel .= ' no_items_page_block="59375"';
-        $carousel .= ' items="2"';
-        $carousel .= ' loop="1"';
-        $carousel .= ' apply_url_params="1"';
-        $carousel .= ' source="all"';
-        $carousel .= ' ignore_sticky_posts="0"';
-        $carousel .= ' tax_query_relation="AND"';
-        $carousel .= ' tax_query="' . $taxQueryEncoded . '"';
-        $carousel .= ' order_invert="1"';
-        $carousel .= ' exclude_out_of_stock="1"';
-        $carousel .= ' quantity="10"';
-        $carousel .= ' exclude_past_events="1"';
-        $carousel .= ' popup_page_template="0"';
-        $carousel .= ']';
-        
-        return $carousel;
-    }
-    
-    /**
-     * Format content for WordPress (convert line breaks to paragraphs)
-     */
-    private function formatContent(string $content): string
-    {
-        // Convert double line breaks to paragraphs
-        $paragraphs = preg_split('/\n\s*\n/', trim($content));
-        $formatted = '';
-        
-        foreach ($paragraphs as $p) {
-            $p = trim($p);
-            if (!empty($p)) {
-                // Don't wrap if already has HTML tags
-                if (!preg_match('/<[^>]+>/', $p)) {
-                    $formatted .= $p . "\n\n";
-                } else {
-                    $formatted .= $p . "\n\n";
-                }
-            }
-        }
-        
-        return trim($formatted);
     }
 
     // ==================== CATEGORIES (WordPress API) ====================
@@ -519,7 +368,7 @@ public function getAllBrands(): array
     $perPage = 100;
     
     do {
-        $url = $this->baseUrl . "/wp/v2/brand?per_page={$perPage}&page={$page}";
+        $url = rtrim($this->config['wordpress']['api_url'], '/') . "/wp/v2/brand?per_page={$perPage}&page={$page}";
         
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -546,35 +395,11 @@ public function getAllBrands(): array
 }
 
 /**
- * Get all product categories from WooCommerce REST API
- */
-public function getAllProductCategories(): array
-{
-    $categories = [];
-    $page = 1;
-    $perPage = 100;
-    
-    do {
-        $result = $this->wcRequest('GET', "/wc/v3/products/categories?per_page={$perPage}&page={$page}");
-        
-        if (empty($result)) {
-            break;
-        }
-        
-        $categories = array_merge($categories, $result);
-        $page++;
-        
-    } while (count($result) === $perPage);
-    
-    return $categories;
-}
-
-/**
  * Get brand for a specific product from WordPress REST API
  */
 public function getProductBrand(int $productId): ?array
 {
-    $url = $this->baseUrl . "/wp/v2/brand?post={$productId}";
+    $url = rtrim($this->config['wordpress']['api_url'], '/') . "/wp/v2/brand?post={$productId}";
     
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -600,42 +425,54 @@ public function getProductBrand(int $productId): ?array
     return null;
 }
 
-/**
- * Get all product IDs that belong to a specific brand
- */
-public function getProductIdsByBrand(int $brandId): array
-{
-    $productIds = [];
-    $page = 1;
-    $perPage = 100;
-    
-    do {
-        $url = $this->baseUrl . "/wp/v2/product?brand={$brandId}&per_page={$perPage}&page={$page}&_fields=id";
-        
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        
-        if ($httpCode !== 200) {
-            break;
+    /**
+     * Get taxonomy SEO fields from WordPress via ACF
+     */
+    public function getTaxonomySeo(string $taxonomy, int $termId): array
+    {
+        try {
+            // Use the WordPress REST API to get term with ACF fields
+            $endpoint = "/wp/v2/{$taxonomy}/{$termId}";
+            $result = $this->wpRequest('GET', $endpoint);
+            
+            // ACF fields are typically in the 'acf' key or 'meta' key
+            $acf = $result['acf'] ?? [];
+            
+            return [
+                'taxonomy_description' => $acf['taxonomy_description'] ?? $result['description'] ?? '',
+                'taxonomy_seo_description' => $acf['taxonomy_seo_description'] ?? ''
+            ];
+        } catch (\Exception $e) {
+            error_log("Failed to get taxonomy SEO for {$taxonomy}/{$termId}: " . $e->getMessage());
+            return [
+                'taxonomy_description' => '',
+                'taxonomy_seo_description' => ''
+            ];
         }
-        
-        $products = json_decode($response, true);
-        if (empty($products)) {
-            break;
+    }
+
+    /**
+     * Update taxonomy SEO fields in WordPress via ACF
+     */
+    public function updateTaxonomySeo(string $taxonomy, int $termId, array $seoData): bool
+    {
+        try {
+            // Update via WordPress REST API with ACF fields
+            $endpoint = "/wp/v2/{$taxonomy}/{$termId}";
+            
+            $data = [
+                'acf' => [
+                    'taxonomy_description' => $seoData['taxonomy_description'] ?? '',
+                    'taxonomy_seo_description' => $seoData['taxonomy_seo_description'] ?? ''
+                ]
+            ];
+            
+            $result = $this->wpRequest('POST', $endpoint, $data);
+            
+            return isset($result['id']);
+        } catch (\Exception $e) {
+            error_log("Failed to update taxonomy SEO for {$taxonomy}/{$termId}: " . $e->getMessage());
+            throw $e;
         }
-        
-        foreach ($products as $product) {
-            $productIds[] = $product['id'];
-        }
-        
-        $page++;
-        
-    } while (count($products) === $perPage);
-    
-    return $productIds;
-}
+    }
 }

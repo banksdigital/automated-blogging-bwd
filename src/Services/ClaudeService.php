@@ -739,4 +739,180 @@ PROMPT;
         
         return $data['content'][0]['text'];
     }
+
+    /**
+     * Generate SEO content for a brand
+     */
+    public function generateBrandSeo(array $brand, array $categories): array
+    {
+        $writingGuidelines = WritingGuidelinesController::getForPrompt();
+        
+        // Build category links for internal linking
+        $categoryLinks = array_map(function($cat) {
+            return [
+                'name' => $cat['name'],
+                'url' => '/product-category/' . $cat['slug'] . '/',
+                'product_count' => $cat['product_count'] ?? 0
+            ];
+        }, $categories);
+        
+        $systemPrompt = <<<PROMPT
+You are an expert SEO copywriter for Black White Denim, a premium fashion retailer.
+
+BRAND VOICE:
+- Sophisticated, confident, and aspirational
+- Write in British English (colour, favourite, centre, etc.)
+- Warm but professional tone
+- Focus on quality, style, and timeless fashion
+
+{$writingGuidelines}
+
+CRITICAL RULES:
+1. ONLY mention categories from the provided list - these are the ONLY categories this brand has products in
+2. Create natural internal links using HTML anchor tags
+3. Write engaging, SEO-optimised content that reads naturally
+4. Do not make up categories or product types not in the list
+5. Use British English spellings throughout
+PROMPT;
+
+        $categoryListText = "";
+        foreach ($categoryLinks as $cat) {
+            $categoryListText .= "- {$cat['name']}: {$cat['url']} ({$cat['product_count']} products)\n";
+        }
+
+        $userPrompt = <<<PROMPT
+Generate SEO content for the brand: {$brand['name']}
+
+This brand has products in ONLY these categories at Black White Denim:
+{$categoryListText}
+
+The brand page URL is: /brand/{$brand['slug']}/
+
+Generate TWO pieces of content:
+
+1. TAXONOMY_DESCRIPTION (150-250 words):
+   - Engaging description of the brand and what makes it special
+   - Naturally incorporate 2-4 internal links to the categories listed above using HTML <a> tags
+   - Example: "Explore their stunning <a href="/product-category/dresses/">dresses</a> collection"
+   - Focus on the brand's aesthetic, quality, and style
+   - Make it informative for shoppers
+
+2. TAXONOMY_SEO_DESCRIPTION (150-160 characters max):
+   - Meta description for search engines
+   - Include brand name and key appeal
+   - Compelling call to action
+
+Respond in this exact JSON format:
+{
+    "description": "The taxonomy_description content with HTML links...",
+    "meta_description": "The short meta description..."
+}
+PROMPT;
+
+        $response = $this->callApi($systemPrompt, $userPrompt);
+        
+        // Parse JSON response
+        $content = json_decode($response, true);
+        
+        if (!$content || !isset($content['description'])) {
+            // Try to extract from text if JSON parsing fails
+            preg_match('/"description"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $descMatch);
+            preg_match('/"meta_description"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $metaMatch);
+            
+            $content = [
+                'description' => $descMatch[1] ?? '',
+                'meta_description' => $metaMatch[1] ?? ''
+            ];
+        }
+        
+        return $content;
+    }
+
+    /**
+     * Generate SEO content for a category
+     */
+    public function generateCategorySeo(array $category, array $brands): array
+    {
+        $writingGuidelines = WritingGuidelinesController::getForPrompt();
+        
+        // Build brand links for internal linking
+        $brandLinks = array_map(function($brand) {
+            return [
+                'name' => $brand['name'],
+                'url' => '/brand/' . $brand['slug'] . '/',
+                'product_count' => $brand['product_count'] ?? 0
+            ];
+        }, $brands);
+        
+        $systemPrompt = <<<PROMPT
+You are an expert SEO copywriter for Black White Denim, a premium fashion retailer.
+
+BRAND VOICE:
+- Sophisticated, confident, and aspirational
+- Write in British English (colour, favourite, centre, etc.)
+- Warm but professional tone
+- Focus on quality, style, and timeless fashion
+
+{$writingGuidelines}
+
+CRITICAL RULES:
+1. ONLY mention brands from the provided list - these are the ONLY brands that have products in this category
+2. Create natural internal links using HTML anchor tags
+3. Write engaging, SEO-optimised content that reads naturally
+4. Do not make up brands not in the list
+5. Use British English spellings throughout
+PROMPT;
+
+        $brandListText = "";
+        foreach ($brandLinks as $brand) {
+            $brandListText .= "- {$brand['name']}: {$brand['url']} ({$brand['product_count']} products)\n";
+        }
+
+        $userPrompt = <<<PROMPT
+Generate SEO content for the category: {$category['name']}
+
+ONLY these brands have products in this category at Black White Denim:
+{$brandListText}
+
+The category page URL is: /product-category/{$category['slug']}/
+
+Generate TWO pieces of content:
+
+1. TAXONOMY_DESCRIPTION (150-250 words):
+   - Engaging description of this category and what shoppers can find
+   - Naturally incorporate 2-4 internal links to the brands listed above using HTML <a> tags
+   - Example: "Discover pieces from <a href="/brand/anine-bing/">Anine Bing</a> and other coveted designers"
+   - Describe the styles, occasions, and appeal of products in this category
+   - Make it informative and inspiring for shoppers
+
+2. TAXONOMY_SEO_DESCRIPTION (150-160 characters max):
+   - Meta description for search engines
+   - Include category name and key selling points
+   - Compelling call to action
+
+Respond in this exact JSON format:
+{
+    "description": "The taxonomy_description content with HTML links...",
+    "meta_description": "The short meta description..."
+}
+PROMPT;
+
+        $response = $this->callApi($systemPrompt, $userPrompt);
+        
+        // Parse JSON response
+        $content = json_decode($response, true);
+        
+        if (!$content || !isset($content['description'])) {
+            // Try to extract from text if JSON parsing fails
+            preg_match('/"description"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $descMatch);
+            preg_match('/"meta_description"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $metaMatch);
+            
+            $content = [
+                'description' => $descMatch[1] ?? '',
+                'meta_description' => $metaMatch[1] ?? ''
+            ];
+        }
+        
+        return $content;
+    }
 }

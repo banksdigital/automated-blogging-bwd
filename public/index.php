@@ -258,6 +258,44 @@ function routeApi(string $path, string $method, array $config): void
             (new \App\Controllers\EventController($config))->delete((int)$m[1]);
             break;
             
+        // Taxonomy SEO
+        case $path === '/taxonomy-seo/brands' && $method === 'GET':
+            (new \App\Controllers\TaxonomySeoController($config))->brands();
+            break;
+        case $path === '/taxonomy-seo/categories' && $method === 'GET':
+            (new \App\Controllers\TaxonomySeoController($config))->categories();
+            break;
+        case preg_match('#^/taxonomy-seo/brands/(\d+)$#', $path, $m) && $method === 'GET':
+            (new \App\Controllers\TaxonomySeoController($config))->brandDetails((int)$m[1]);
+            break;
+        case preg_match('#^/taxonomy-seo/categories/(\d+)$#', $path, $m) && $method === 'GET':
+            (new \App\Controllers\TaxonomySeoController($config))->categoryDetails((int)$m[1]);
+            break;
+        case preg_match('#^/taxonomy-seo/brands/(\d+)/generate$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\TaxonomySeoController($config))->generateBrandSeo((int)$m[1]);
+            break;
+        case preg_match('#^/taxonomy-seo/categories/(\d+)/generate$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\TaxonomySeoController($config))->generateCategorySeo((int)$m[1]);
+            break;
+        case preg_match('#^/taxonomy-seo/brands/(\d+)$#', $path, $m) && $method === 'PUT':
+            (new \App\Controllers\TaxonomySeoController($config))->saveBrandSeo((int)$m[1], $input);
+            break;
+        case preg_match('#^/taxonomy-seo/categories/(\d+)$#', $path, $m) && $method === 'PUT':
+            (new \App\Controllers\TaxonomySeoController($config))->saveCategorySeo((int)$m[1], $input);
+            break;
+        case preg_match('#^/taxonomy-seo/brands/(\d+)/push$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\TaxonomySeoController($config))->pushBrandToWordPress((int)$m[1]);
+            break;
+        case preg_match('#^/taxonomy-seo/categories/(\d+)/push$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\TaxonomySeoController($config))->pushCategoryToWordPress((int)$m[1]);
+            break;
+        case preg_match('#^/taxonomy-seo/brands/(\d+)/pull$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\TaxonomySeoController($config))->pullBrandFromWordPress((int)$m[1]);
+            break;
+        case preg_match('#^/taxonomy-seo/categories/(\d+)/pull$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\TaxonomySeoController($config))->pullCategoryFromWordPress((int)$m[1]);
+            break;
+            
         // Roadmap
         case $path === '/roadmap' && $method === 'GET':
             (new \App\Controllers\RoadmapController($config))->index($_GET);
@@ -473,6 +511,7 @@ function routeWeb(string $path, string $method, array $config): void
         case '/posts/new':
         case '/roadmap':
         case '/calendar-events':
+        case '/taxonomy-seo':
         case '/brainstorm':
         case '/products':
         case '/autopilot':

@@ -116,6 +116,8 @@ const App = {
             this.loadRoadmap();
         } else if (path === '/calendar-events') {
             this.loadCalendarEvents();
+        } else if (path === '/taxonomy-seo') {
+            this.loadTaxonomySeo();
         } else if (path === '/brainstorm') {
             this.loadBrainstorm();
         } else if (path === '/products') {
@@ -1520,6 +1522,365 @@ const App = {
         }
     },
 
+    // ==================== TAXONOMY SEO ====================
+    taxonomySeoTab: 'brands',
+    
+    async loadTaxonomySeo() {
+        const main = document.getElementById('main-content');
+        main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        
+        try {
+            main.innerHTML = `
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Taxonomy SEO</h1>
+                        <p class="page-subtitle">Generate and manage SEO content for brands and categories</p>
+                    </div>
+                </div>
+                
+                <!-- Tab Navigation -->
+                <div style="display:flex;gap:8px;margin-bottom:24px;">
+                    <button class="btn ${this.taxonomySeoTab === 'brands' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTaxonomySeoTab('brands')">🏷️ Brands</button>
+                    <button class="btn ${this.taxonomySeoTab === 'categories' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTaxonomySeoTab('categories')">📁 Categories</button>
+                </div>
+                
+                <div id="taxonomy-seo-content">
+                    <div class="loading"><div class="spinner"></div></div>
+                </div>
+                
+                <!-- Edit Modal -->
+                <div id="seo-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;overflow-y:auto;padding:20px;">
+                    <div style="background:var(--bg-card);padding:32px;border-radius:8px;width:100%;max-width:800px;margin:auto;">
+                        <h2 id="seo-modal-title" style="margin-bottom:24px;">Edit SEO Content</h2>
+                        <input type="hidden" id="seo-edit-id">
+                        <input type="hidden" id="seo-edit-type">
+                        
+                        <div class="form-group">
+                            <label class="form-label">Description (taxonomy_description)</label>
+                            <textarea id="seo-description" class="form-input form-textarea" rows="8" placeholder="Main description with internal links..."></textarea>
+                            <small style="color:var(--text-muted);font-size:11px;">HTML allowed. Include internal links to related categories/brands.</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Meta Description (taxonomy_seo_description)</label>
+                            <textarea id="seo-meta-description" class="form-input form-textarea" rows="2" placeholder="Short meta description for search engines (150-160 chars)..."></textarea>
+                            <small style="color:var(--text-muted);font-size:11px;"><span id="meta-char-count">0</span>/160 characters</small>
+                        </div>
+                        
+                        <div id="seo-related-info" style="margin-bottom:20px;padding:16px;background:var(--bg-tertiary);border-radius:8px;"></div>
+                        
+                        <div style="display:flex;gap:12px;justify-content:space-between;margin-top:24px;">
+                            <div style="display:flex;gap:8px;">
+                                <button class="btn btn-secondary" onclick="App.pullSeoFromWordPress()">⬇️ Pull from WP</button>
+                                <button class="btn" style="background:var(--status-published);color:white;" onclick="App.pushSeoToWordPress()">⬆️ Push to WP</button>
+                            </div>
+                            <div style="display:flex;gap:8px;">
+                                <button class="btn btn-secondary" onclick="App.closeSeoModal()">Cancel</button>
+                                <button class="btn btn-primary" onclick="App.saveSeoContent()">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Add character counter for meta description
+            document.getElementById('seo-meta-description').addEventListener('input', (e) => {
+                document.getElementById('meta-char-count').textContent = e.target.value.length;
+            });
+            
+            this.loadTaxonomySeoTab();
+        } catch (error) {
+            main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
+        }
+    },
+    
+    setTaxonomySeoTab(tab) {
+        this.taxonomySeoTab = tab;
+        document.querySelectorAll('.page-header + div .btn').forEach((btn, i) => {
+            btn.className = `btn ${(i === 0 && tab === 'brands') || (i === 1 && tab === 'categories') ? 'btn-primary' : 'btn-secondary'}`;
+        });
+        this.loadTaxonomySeoTab();
+    },
+    
+    async loadTaxonomySeoTab() {
+        const container = document.getElementById('taxonomy-seo-content');
+        container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        
+        try {
+            if (this.taxonomySeoTab === 'brands') {
+                const brands = await this.api('/taxonomy-seo/brands');
+                container.innerHTML = this.renderBrandsSeoTable(brands);
+            } else {
+                const categories = await this.api('/taxonomy-seo/categories');
+                container.innerHTML = this.renderCategoriesSeoTable(categories);
+            }
+        } catch (error) {
+            container.innerHTML = `<div class="card"><div class="card-body"><p style="color:var(--status-error);">Error: ${error.message}</p></div></div>`;
+        }
+    },
+    
+    renderBrandsSeoTable(brands) {
+        const withSeo = brands.filter(b => b.seo_description);
+        const withoutSeo = brands.filter(b => !b.seo_description);
+        
+        return `
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">📊 SEO Status</span>
+                </div>
+                <div class="card-body">
+                    <div style="display:flex;gap:24px;">
+                        <div><strong style="color:var(--status-published);">${withSeo.length}</strong> brands with SEO content</div>
+                        <div><strong style="color:var(--status-review);">${withoutSeo.length}</strong> brands need SEO content</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">🏷️ Brands (${brands.length})</span>
+                </div>
+                <div class="card-body" style="padding:0;">
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead>
+                            <tr style="border-bottom:1px solid var(--border-default);">
+                                <th style="text-align:left;padding:12px 16px;font-size:12px;color:var(--text-secondary);">Brand</th>
+                                <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Products</th>
+                                <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Categories</th>
+                                <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">SEO Status</th>
+                                <th style="text-align:right;padding:12px 16px;font-size:12px;color:var(--text-secondary);">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${brands.map(b => `
+                                <tr style="border-bottom:1px solid var(--border-default);">
+                                    <td style="padding:12px 16px;">
+                                        <div style="font-weight:500;">${this.escapeHtml(b.name)}</div>
+                                        <div style="font-size:12px;color:var(--text-secondary);">/brand/${b.slug}/</div>
+                                    </td>
+                                    <td style="padding:12px 8px;text-align:center;">${b.product_count || 0}</td>
+                                    <td style="padding:12px 8px;text-align:center;">${b.category_count || 0}</td>
+                                    <td style="padding:12px 8px;text-align:center;">
+                                        ${b.seo_description 
+                                            ? '<span style="color:var(--status-published);">✓ Has SEO</span>' 
+                                            : '<span style="color:var(--text-muted);">—</span>'}
+                                    </td>
+                                    <td style="padding:12px 16px;text-align:right;">
+                                        <button class="btn btn-sm btn-secondary" onclick="App.generateBrandSeo(${b.id})" style="margin-right:4px;">✨ Generate</button>
+                                        <button class="btn btn-sm btn-secondary" onclick="App.editBrandSeo(${b.id})">Edit</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    },
+    
+    renderCategoriesSeoTable(categories) {
+        const withSeo = categories.filter(c => c.seo_description);
+        const withoutSeo = categories.filter(c => !c.seo_description);
+        
+        return `
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">📊 SEO Status</span>
+                </div>
+                <div class="card-body">
+                    <div style="display:flex;gap:24px;">
+                        <div><strong style="color:var(--status-published);">${withSeo.length}</strong> categories with SEO content</div>
+                        <div><strong style="color:var(--status-review);">${withoutSeo.length}</strong> categories need SEO content</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📁 Categories (${categories.length})</span>
+                </div>
+                <div class="card-body" style="padding:0;">
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead>
+                            <tr style="border-bottom:1px solid var(--border-default);">
+                                <th style="text-align:left;padding:12px 16px;font-size:12px;color:var(--text-secondary);">Category</th>
+                                <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Products</th>
+                                <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Brands</th>
+                                <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">SEO Status</th>
+                                <th style="text-align:right;padding:12px 16px;font-size:12px;color:var(--text-secondary);">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${categories.map(c => `
+                                <tr style="border-bottom:1px solid var(--border-default);">
+                                    <td style="padding:12px 16px;">
+                                        <div style="font-weight:500;">${this.escapeHtml(c.name)}</div>
+                                        <div style="font-size:12px;color:var(--text-secondary);">/product-category/${c.slug}/</div>
+                                    </td>
+                                    <td style="padding:12px 8px;text-align:center;">${c.product_count || 0}</td>
+                                    <td style="padding:12px 8px;text-align:center;">${c.brand_count || 0}</td>
+                                    <td style="padding:12px 8px;text-align:center;">
+                                        ${c.seo_description 
+                                            ? '<span style="color:var(--status-published);">✓ Has SEO</span>' 
+                                            : '<span style="color:var(--text-muted);">—</span>'}
+                                    </td>
+                                    <td style="padding:12px 16px;text-align:right;">
+                                        <button class="btn btn-sm btn-secondary" onclick="App.generateCategorySeo(${c.id})" style="margin-right:4px;">✨ Generate</button>
+                                        <button class="btn btn-sm btn-secondary" onclick="App.editCategorySeo(${c.id})">Edit</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    },
+    
+    async generateBrandSeo(id) {
+        if (!confirm('Generate SEO content for this brand? This will overwrite any existing content.')) return;
+        
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ Generating...';
+        btn.disabled = true;
+        
+        try {
+            const result = await this.api(`/taxonomy-seo/brands/${id}/generate`, { method: 'POST' });
+            this.toast('Brand SEO generated!', 'success');
+            this.loadTaxonomySeoTab();
+        } catch (error) {
+            this.toast(error.message, 'error');
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    },
+    
+    async generateCategorySeo(id) {
+        if (!confirm('Generate SEO content for this category? This will overwrite any existing content.')) return;
+        
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ Generating...';
+        btn.disabled = true;
+        
+        try {
+            const result = await this.api(`/taxonomy-seo/categories/${id}/generate`, { method: 'POST' });
+            this.toast('Category SEO generated!', 'success');
+            this.loadTaxonomySeoTab();
+        } catch (error) {
+            this.toast(error.message, 'error');
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    },
+    
+    async editBrandSeo(id) {
+        try {
+            const brand = await this.api(`/taxonomy-seo/brands/${id}`);
+            
+            document.getElementById('seo-modal-title').textContent = `Edit SEO: ${brand.name}`;
+            document.getElementById('seo-edit-id').value = id;
+            document.getElementById('seo-edit-type').value = 'brand';
+            document.getElementById('seo-description').value = brand.seo_description || '';
+            document.getElementById('seo-meta-description').value = brand.seo_meta_description || '';
+            document.getElementById('meta-char-count').textContent = (brand.seo_meta_description || '').length;
+            
+            // Show related categories
+            const relatedHtml = brand.categories && brand.categories.length > 0
+                ? `<strong>Categories this brand has products in:</strong><br>${brand.categories.map(c => `<a href="/product-category/${c.slug}/" target="_blank">${c.name}</a> (${c.product_count})`).join(', ')}`
+                : '<em>No category data available</em>';
+            document.getElementById('seo-related-info').innerHTML = relatedHtml;
+            
+            document.getElementById('seo-modal').style.display = 'flex';
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async editCategorySeo(id) {
+        try {
+            const category = await this.api(`/taxonomy-seo/categories/${id}`);
+            
+            document.getElementById('seo-modal-title').textContent = `Edit SEO: ${category.name}`;
+            document.getElementById('seo-edit-id').value = id;
+            document.getElementById('seo-edit-type').value = 'category';
+            document.getElementById('seo-description').value = category.seo_description || '';
+            document.getElementById('seo-meta-description').value = category.seo_meta_description || '';
+            document.getElementById('meta-char-count').textContent = (category.seo_meta_description || '').length;
+            
+            // Show related brands
+            const relatedHtml = category.brands && category.brands.length > 0
+                ? `<strong>Brands with products in this category:</strong><br>${category.brands.map(b => `<a href="/brand/${b.slug}/" target="_blank">${b.name}</a> (${b.product_count})`).join(', ')}`
+                : '<em>No brand data available</em>';
+            document.getElementById('seo-related-info').innerHTML = relatedHtml;
+            
+            document.getElementById('seo-modal').style.display = 'flex';
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    closeSeoModal() {
+        document.getElementById('seo-modal').style.display = 'none';
+    },
+    
+    async saveSeoContent() {
+        const id = document.getElementById('seo-edit-id').value;
+        const type = document.getElementById('seo-edit-type').value;
+        const description = document.getElementById('seo-description').value;
+        const metaDescription = document.getElementById('seo-meta-description').value;
+        
+        try {
+            await this.api(`/taxonomy-seo/${type === 'brand' ? 'brands' : 'categories'}/${id}`, {
+                method: 'PUT',
+                body: {
+                    seo_description: description,
+                    seo_meta_description: metaDescription
+                }
+            });
+            this.toast('SEO content saved!', 'success');
+            this.closeSeoModal();
+            this.loadTaxonomySeoTab();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async pushSeoToWordPress() {
+        const id = document.getElementById('seo-edit-id').value;
+        const type = document.getElementById('seo-edit-type').value;
+        
+        if (!confirm('Push SEO content to WordPress? This will update the live site.')) return;
+        
+        try {
+            await this.api(`/taxonomy-seo/${type === 'brand' ? 'brands' : 'categories'}/${id}/push`, { method: 'POST' });
+            this.toast('SEO content pushed to WordPress!', 'success');
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async pullSeoFromWordPress() {
+        const id = document.getElementById('seo-edit-id').value;
+        const type = document.getElementById('seo-edit-type').value;
+        
+        if (!confirm('Pull SEO content from WordPress? This will overwrite local changes.')) return;
+        
+        try {
+            const result = await this.api(`/taxonomy-seo/${type === 'brand' ? 'brands' : 'categories'}/${id}/pull`, { method: 'POST' });
+            
+            // Update the form with pulled data
+            document.getElementById('seo-description').value = result.taxonomy_description || '';
+            document.getElementById('seo-meta-description').value = result.taxonomy_seo_description || '';
+            document.getElementById('meta-char-count').textContent = (result.taxonomy_seo_description || '').length;
+            
+            this.toast('SEO content pulled from WordPress!', 'success');
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+
     // ==================== BRAINSTORM ====================
     async loadBrainstorm() {
         const main = document.getElementById('main-content');
@@ -1718,6 +2079,14 @@ const App = {
                         <div style="font-size:32px;margin-bottom:12px;">📅</div>
                         <div style="font-weight:600;margin-bottom:4px;">Calendar Events</div>
                         <div style="font-size:13px;color:var(--text-secondary);">Manage seasonal events for content</div>
+                    </div>
+                </div>
+                
+                <div class="card" onclick="App.navigate('/taxonomy-seo')" style="cursor:pointer;">
+                    <div class="card-body" style="text-align:center;padding:40px;">
+                        <div style="font-size:32px;margin-bottom:12px;">🔍</div>
+                        <div style="font-weight:600;margin-bottom:4px;">Taxonomy SEO</div>
+                        <div style="font-size:13px;color:var(--text-secondary);">SEO content for brands & categories</div>
                     </div>
                 </div>
                 
