@@ -190,29 +190,87 @@ class TaxonomySeoController
                 return;
             }
             
-            // Get categories this brand has products in (parent categories only for cleaner links)
+            // Debug: Check how many products have this brand_id
+            $productCount = Database::queryOne(
+                "SELECT COUNT(*) as cnt FROM wp_products WHERE brand_id = ?",
+                [$id]
+            );
+            error_log("generateBrandSeo: Brand '{$brand['name']}' (id={$id}) has {$productCount['cnt']} products with brand_id set");
+            
+            // Debug: Check in-stock products
+            $inStockCount = Database::queryOne(
+                "SELECT COUNT(*) as cnt FROM wp_products WHERE brand_id = ? AND stock_status = 'instock'",
+                [$id]
+            );
+            error_log("generateBrandSeo: In-stock products: {$inStockCount['cnt']}");
+            
+            // Debug: Get sample product to check its data
+            $sampleProduct = Database::queryOne(
+                "SELECT id, title, brand_id, stock_status, category_slugs FROM wp_products WHERE brand_id = ? LIMIT 1",
+                [$id]
+            );
+            if ($sampleProduct) {
+                error_log("generateBrandSeo: Sample product: " . json_encode($sampleProduct));
+            }
+            
+            // First try: Get categories with stock_status filter
             $categories = Database::query(
-                "SELECT DISTINCT pc.name, pc.slug, COUNT(p.id) as product_count
+                "SELECT DISTINCT pc.name, pc.slug, pc.parent_id, COUNT(p.id) as product_count
                  FROM wp_products p
                  JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
-                 WHERE p.brand_id = ? AND p.stock_status = 'instock' AND pc.parent_id = 0
-                 GROUP BY pc.id, pc.name, pc.slug
+                 WHERE p.brand_id = ? AND p.stock_status = 'instock'
+                 GROUP BY pc.id, pc.name, pc.slug, pc.parent_id
                  ORDER BY product_count DESC
-                 LIMIT 10",
+                 LIMIT 15",
                 [$id]
             );
             
-            // Debug log
-            error_log("generateBrandSeo: Brand '{$brand['name']}' has " . count($categories) . " categories");
+            error_log("generateBrandSeo: Found " . count($categories) . " categories (with instock filter)");
+            
+            // If no results with instock filter, try without it
+            if (empty($categories)) {
+                error_log("generateBrandSeo: Trying without stock_status filter");
+                $categories = Database::query(
+                    "SELECT DISTINCT pc.name, pc.slug, pc.parent_id, COUNT(p.id) as product_count
+                     FROM wp_products p
+                     JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
+                     WHERE p.brand_id = ?
+                     GROUP BY pc.id, pc.name, pc.slug, pc.parent_id
+                     ORDER BY product_count DESC
+                     LIMIT 15",
+                    [$id]
+                );
+                error_log("generateBrandSeo: Found " . count($categories) . " categories (without stock filter)");
+            }
+            
+            // Filter to prefer parent categories if we have them
+            $parentCategories = array_filter($categories, fn($c) => $c['parent_id'] == 0 || $c['parent_id'] === null);
+            if (!empty($parentCategories)) {
+                $categories = array_slice($parentCategories, 0, 10);
+            } else {
+                $categories = array_slice($categories, 0, 10);
+            }
+            
             if (!empty($categories)) {
-                error_log("Categories: " . json_encode(array_column($categories, 'name')));
+                error_log("generateBrandSeo: Final categories: " . json_encode(array_column($categories, 'name')));
             }
             
             if (empty($categories)) {
+                // Provide detailed error
+                $errorMsg = "No categories found for brand '{$brand['name']}'. ";
+                $errorMsg .= "Products with brand_id={$id}: {$productCount['cnt']}. ";
+                $errorMsg .= "In-stock: {$inStockCount['cnt']}. ";
+                
+                if ($productCount['cnt'] > 0) {
+                    $errorMsg .= "Products exist but may have no matching categories synced.";
+                } else {
+                    $errorMsg .= "No products have this brand_id - sync products after syncing brands.";
+                }
+                
                 http_response_code(400);
                 echo json_encode([
                     'success' => false, 
-                    'error' => ['message' => "No products found for brand '{$brand['name']}'. Sync products first."]
+                    'error' => ['message' => $errorMsg]
                 ]);
                 return;
             }
