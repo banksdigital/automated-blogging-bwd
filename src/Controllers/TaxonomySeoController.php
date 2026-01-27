@@ -35,6 +35,7 @@ class TaxonomySeoController
                      FROM wp_products p 
                      JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
                      WHERE p.brand_id = b.id AND p.stock_status = 'instock' AND pc.parent_id = 0
+                     AND pc.slug NOT LIKE '%sale%' AND pc.name NOT LIKE '%Sale%'
                     ) as category_count
                  FROM wp_brands b
                  WHERE b.count > 0
@@ -113,12 +114,13 @@ class TaxonomySeoController
                 return;
             }
             
-            // Get categories this brand has products in
+            // Get categories this brand has products in (exclude sale categories)
             $categories = Database::query(
                 "SELECT DISTINCT pc.id, pc.name, pc.slug, COUNT(p.id) as product_count
                  FROM wp_products p
                  JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
                  WHERE p.brand_id = ? AND p.stock_status = 'instock' AND pc.parent_id = 0
+                 AND pc.slug NOT LIKE '%sale%' AND pc.name NOT LIKE '%Sale%'
                  GROUP BY pc.id
                  ORDER BY product_count DESC",
                 [$id]
@@ -214,11 +216,14 @@ class TaxonomySeoController
             }
             
             // First try: Get categories with stock_status filter
+            // Exclude sale-related categories
             $categories = Database::query(
                 "SELECT DISTINCT pc.name, pc.slug, pc.parent_id, COUNT(p.id) as product_count
                  FROM wp_products p
                  JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
                  WHERE p.brand_id = ? AND p.stock_status = 'instock'
+                 AND pc.slug NOT LIKE '%sale%'
+                 AND pc.name NOT LIKE '%Sale%'
                  GROUP BY pc.id, pc.name, pc.slug, pc.parent_id
                  ORDER BY product_count DESC
                  LIMIT 15",
@@ -235,6 +240,8 @@ class TaxonomySeoController
                      FROM wp_products p
                      JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
                      WHERE p.brand_id = ?
+                     AND pc.slug NOT LIKE '%sale%'
+                     AND pc.name NOT LIKE '%Sale%'
                      GROUP BY pc.id, pc.name, pc.slug, pc.parent_id
                      ORDER BY product_count DESC
                      LIMIT 15",
@@ -388,6 +395,7 @@ class TaxonomySeoController
             }
             
             // Get related categories (sibling categories - same parent, or children if this is a parent)
+            // Exclude sale-related categories
             $relatedCategories = [];
             
             if ($category['parent_id'] > 0) {
@@ -395,13 +403,15 @@ class TaxonomySeoController
                 $relatedCategories = Database::query(
                     "SELECT name, slug FROM wp_product_categories 
                      WHERE parent_id = ? AND id != ? AND count > 0
+                     AND slug NOT LIKE '%sale%' AND name NOT LIKE '%Sale%'
                      ORDER BY count DESC LIMIT 5",
                     [$category['parent_id'], $id]
                 );
                 
-                // Also get parent category
+                // Also get parent category (if not sale-related)
                 $parent = Database::queryOne(
-                    "SELECT name, slug FROM wp_product_categories WHERE wp_term_id = ?",
+                    "SELECT name, slug FROM wp_product_categories 
+                     WHERE wp_term_id = ? AND slug NOT LIKE '%sale%' AND name NOT LIKE '%Sale%'",
                     [$category['parent_id']]
                 );
                 if ($parent) {
@@ -412,6 +422,7 @@ class TaxonomySeoController
                 $relatedCategories = Database::query(
                     "SELECT name, slug FROM wp_product_categories 
                      WHERE parent_id = ? AND count > 0
+                     AND slug NOT LIKE '%sale%' AND name NOT LIKE '%Sale%'
                      ORDER BY count DESC LIMIT 8",
                     [$category['wp_term_id']]
                 );
