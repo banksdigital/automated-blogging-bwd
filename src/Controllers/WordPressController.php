@@ -340,18 +340,31 @@ public function syncProducts(): void
     try {
         $service = new WordPressService($this->config);
         
+        // First, get local brand ID mapping (wp_term_id -> local id)
+        $localBrands = Database::query("SELECT id, wp_term_id, slug FROM wp_brands");
+        $localBrandMap = [];
+        foreach ($localBrands as $lb) {
+            $localBrandMap[$lb['wp_term_id']] = $lb['id'];
+        }
+        error_log("Local brand map: " . count($localBrandMap) . " brands in local database");
+        
         // Build product -> brand map by querying each brand's products (much faster than per-product lookup)
         $allBrands = $service->getAllBrands();
         $productBrandMap = [];
         
-        error_log("Building brand map from " . count($allBrands) . " brands...");
+        error_log("Building brand map from " . count($allBrands) . " WP brands...");
         
         foreach ($allBrands as $brand) {
             // Get all product IDs for this brand
             $brandProductIds = $service->getProductIdsByBrand($brand['id']);
+            
+            // Look up local brand ID
+            $localBrandId = $localBrandMap[$brand['id']] ?? null;
+            
             foreach ($brandProductIds as $productId) {
                 $productBrandMap[$productId] = [
-                    'id' => $brand['id'],
+                    'wp_term_id' => $brand['id'],
+                    'local_id' => $localBrandId,
                     'name' => html_entity_decode($brand['name']),
                     'slug' => $brand['slug']
                 ];
@@ -365,6 +378,7 @@ public function syncProducts(): void
         error_log("Fetched " . count($products) . " products from WooCommerce");
 
         $synced = 0;
+        $missingBrands = 0;
         foreach ($products as $product) {
             // Look up brand from pre-built map (no API call needed)
             $brandSlug = null;
@@ -372,9 +386,13 @@ public function syncProducts(): void
             $brandId = null;
             
             if (isset($productBrandMap[$product['id']])) {
-                $brandId = $productBrandMap[$product['id']]['id'];
+                $brandId = $productBrandMap[$product['id']]['local_id']; // Use LOCAL id, not WP term ID
                 $brandName = $productBrandMap[$product['id']]['name'];
                 $brandSlug = $productBrandMap[$product['id']]['slug'];
+                
+                if ($brandId === null) {
+                    $missingBrands++;
+                }
             }
             
             // Extract categories with IDs
@@ -454,10 +472,16 @@ public function syncProducts(): void
         }
 
         $this->logActivity('sync_products', 'system', null, ['count' => $synced]);
+        
+        $message = "Synced {$synced} products";
+        if ($missingBrands > 0) {
+            $message .= " ({$missingBrands} products have brands not in local database - sync brands first)";
+            error_log("Product sync: {$missingBrands} products have WP brands not synced to local database");
+        }
 
         echo json_encode([
             'success' => true,
-            'data' => ['synced' => $synced, 'message' => "Synced {$synced} products"]
+            'data' => ['synced' => $synced, 'missing_brands' => $missingBrands, 'message' => $message]
         ]);
 
     } catch (\Exception $e) {

@@ -255,17 +255,77 @@ class TaxonomySeoController
                 return;
             }
             
+            // Debug: Log what we're searching for
+            error_log("generateCategorySeo: Looking for products in category '{$category['name']}' with slug '{$category['slug']}'");
+            
             // Get brands that have products in this category
+            // Use LEFT JOIN to find products even if brand_id is NULL
             $brands = Database::query(
                 "SELECT DISTINCT b.name, b.slug, COUNT(p.id) as product_count
                  FROM wp_products p
-                 JOIN wp_brands b ON p.brand_id = b.id
-                 WHERE JSON_CONTAINS(p.category_slugs, CONCAT('\"', ?, '\"')) AND p.stock_status = 'instock'
+                 LEFT JOIN wp_brands b ON p.brand_id = b.id
+                 WHERE JSON_CONTAINS(p.category_slugs, CONCAT('\"', ?, '\"')) 
+                   AND p.stock_status = 'instock'
+                   AND b.id IS NOT NULL
                  GROUP BY b.id, b.name, b.slug
                  ORDER BY product_count DESC
                  LIMIT 15",
                 [$category['slug']]
             );
+            
+            // Also check how many products exist (even without brands)
+            $productCount = Database::queryOne(
+                "SELECT COUNT(*) as cnt FROM wp_products 
+                 WHERE JSON_CONTAINS(category_slugs, CONCAT('\"', ?, '\"')) AND stock_status = 'instock'",
+                [$category['slug']]
+            );
+            
+            error_log("generateCategorySeo: Found {$productCount['cnt']} products, " . count($brands) . " with brand links");
+            
+            // If no brands found, try checking if there are ANY products with this category
+            if (empty($brands)) {
+                // Check if products exist but maybe out of stock
+                $anyProducts = Database::queryOne(
+                    "SELECT COUNT(*) as cnt FROM wp_products WHERE JSON_CONTAINS(category_slugs, CONCAT('\"', ?, '\"'))",
+                    [$category['slug']]
+                );
+                
+                // Also check child categories if this is a parent
+                $childSlugs = Database::query(
+                    "SELECT slug FROM wp_product_categories WHERE parent_id = ?",
+                    [$category['wp_term_id']]
+                );
+                
+                $debugInfo = "Slug searched: '{$category['slug']}'. ";
+                $debugInfo .= "Products found (any stock): {$anyProducts['cnt']}. ";
+                
+                if (!empty($childSlugs)) {
+                    // Try to find products in child categories
+                    $childSlugList = array_column($childSlugs, 'slug');
+                    $debugInfo .= "Has " . count($childSlugs) . " child categories. ";
+                    
+                    // Search in child categories
+                    $placeholders = implode(',', array_fill(0, count($childSlugList), '?'));
+                    $childBrands = Database::query(
+                        "SELECT DISTINCT b.name, b.slug, COUNT(p.id) as product_count
+                         FROM wp_products p
+                         JOIN wp_brands b ON p.brand_id = b.id
+                         WHERE p.stock_status = 'instock' 
+                         AND (" . implode(' OR ', array_map(fn($s) => "JSON_CONTAINS(p.category_slugs, '\"$s\"')", $childSlugList)) . ")
+                         GROUP BY b.id, b.name, b.slug
+                         ORDER BY product_count DESC
+                         LIMIT 15"
+                    );
+                    
+                    if (!empty($childBrands)) {
+                        $brands = $childBrands;
+                        $debugInfo .= "Found " . count($childBrands) . " brands via child categories.";
+                        error_log("generateCategorySeo: Using child category products for parent '{$category['name']}'");
+                    }
+                }
+                
+                error_log("generateCategorySeo debug: " . $debugInfo);
+            }
             
             // Get related categories (sibling categories - same parent, or children if this is a parent)
             $relatedCategories = [];
@@ -304,13 +364,29 @@ class TaxonomySeoController
             }
             error_log("Related categories: " . count($relatedCategories));
             
-            if (empty($brands)) {
+            // Check if we have products but no brand links
+            $productCheck = Database::queryOne(
+                "SELECT COUNT(*) as cnt FROM wp_products 
+                 WHERE JSON_CONTAINS(category_slugs, CONCAT('\"', ?, '\"')) AND stock_status = 'instock'",
+                [$category['slug']]
+            );
+            
+            if (empty($brands) && $productCheck['cnt'] == 0) {
+                // No products at all
+                $errorMsg = "No in-stock products found in category '{$category['name']}' (slug: {$category['slug']}).";
+                $errorMsg .= " Products may be tagged with sub-categories only. Check if products are synced.";
+                
                 http_response_code(400);
                 echo json_encode([
                     'success' => false, 
-                    'error' => ['message' => "No products found in category '{$category['name']}'. Sync products first."]
+                    'error' => ['message' => $errorMsg]
                 ]);
                 return;
+            }
+            
+            if (empty($brands) && $productCheck['cnt'] > 0) {
+                // Products exist but no brand links - still generate but without brand links
+                error_log("generateCategorySeo: {$productCheck['cnt']} products found but no brand_id set. Generating without brand links.");
             }
             
             $claudeService = new ClaudeService($this->config);
