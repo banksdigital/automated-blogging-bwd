@@ -1653,13 +1653,21 @@ const App = {
             </div>
             
             <div class="card">
-                <div class="card-header">
+                <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
                     <span class="card-title">🏷️ Brands (${brands.length})</span>
+                    <div id="bulk-actions-brands" style="display:none;gap:8px;">
+                        <span id="selected-count-brands" style="color:var(--text-secondary);margin-right:8px;">0 selected</span>
+                        <button class="btn btn-sm btn-primary" onclick="App.bulkGenerateBrands()">✨ Generate Selected</button>
+                        <button class="btn btn-sm" style="background:var(--status-published);color:white;" onclick="App.bulkPushBrands()">⬆️ Push Selected to WP</button>
+                    </div>
                 </div>
                 <div class="card-body" style="padding:0;">
                     <table style="width:100%;border-collapse:collapse;">
                         <thead>
                             <tr style="border-bottom:1px solid var(--border-default);">
+                                <th style="text-align:center;padding:12px 8px;width:40px;">
+                                    <input type="checkbox" id="select-all-brands" onchange="App.toggleSelectAllBrands(this)">
+                                </th>
                                 <th style="text-align:left;padding:12px 16px;font-size:12px;color:var(--text-secondary);">Brand</th>
                                 <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Products</th>
                                 <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Categories</th>
@@ -1669,7 +1677,10 @@ const App = {
                         </thead>
                         <tbody>
                             ${brands.map(b => `
-                                <tr style="border-bottom:1px solid var(--border-default);">
+                                <tr style="border-bottom:1px solid var(--border-default);" data-brand-id="${b.id}">
+                                    <td style="padding:12px 8px;text-align:center;">
+                                        <input type="checkbox" class="brand-checkbox" value="${b.id}" onchange="App.updateBrandSelection()">
+                                    </td>
                                     <td style="padding:12px 16px;">
                                         <div style="font-weight:500;">${this.escapeHtml(b.name)}</div>
                                         <div style="font-size:12px;color:var(--text-secondary);">/brand/${b.slug}/</div>
@@ -1712,13 +1723,21 @@ const App = {
             </div>
             
             <div class="card">
-                <div class="card-header">
+                <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
                     <span class="card-title">📁 Categories (${categories.length})</span>
+                    <div id="bulk-actions-categories" style="display:none;gap:8px;">
+                        <span id="selected-count-categories" style="color:var(--text-secondary);margin-right:8px;">0 selected</span>
+                        <button class="btn btn-sm btn-primary" onclick="App.bulkGenerateCategories()">✨ Generate Selected</button>
+                        <button class="btn btn-sm" style="background:var(--status-published);color:white;" onclick="App.bulkPushCategories()">⬆️ Push Selected to WP</button>
+                    </div>
                 </div>
                 <div class="card-body" style="padding:0;">
                     <table style="width:100%;border-collapse:collapse;">
                         <thead>
                             <tr style="border-bottom:1px solid var(--border-default);">
+                                <th style="text-align:center;padding:12px 8px;width:40px;">
+                                    <input type="checkbox" id="select-all-categories" onchange="App.toggleSelectAllCategories(this)">
+                                </th>
                                 <th style="text-align:left;padding:12px 16px;font-size:12px;color:var(--text-secondary);">Category</th>
                                 <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Products</th>
                                 <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Brands</th>
@@ -1728,7 +1747,10 @@ const App = {
                         </thead>
                         <tbody>
                             ${categories.map(c => `
-                                <tr style="border-bottom:1px solid var(--border-default);${c.parent_id ? 'background:var(--bg-tertiary);' : ''}">
+                                <tr style="border-bottom:1px solid var(--border-default);${c.parent_id ? 'background:var(--bg-tertiary);' : ''}" data-category-id="${c.id}">
+                                    <td style="padding:12px 8px;text-align:center;">
+                                        <input type="checkbox" class="category-checkbox" value="${c.id}" onchange="App.updateCategorySelection()">
+                                    </td>
                                     <td style="padding:12px 16px;${c.parent_id ? 'padding-left:32px;' : ''}">
                                         <div style="font-weight:500;">${c.parent_id ? '↳ ' : ''}${this.escapeHtml(c.name)}</div>
                                         <div style="font-size:12px;color:var(--text-secondary);">
@@ -1807,6 +1829,168 @@ const App = {
             btn.textContent = originalText;
             btn.disabled = false;
         }
+    },
+    
+    // Bulk selection functions for Brands
+    toggleSelectAllBrands(checkbox) {
+        const checkboxes = document.querySelectorAll('.brand-checkbox');
+        checkboxes.forEach(cb => cb.checked = checkbox.checked);
+        this.updateBrandSelection();
+    },
+    
+    updateBrandSelection() {
+        const checkboxes = document.querySelectorAll('.brand-checkbox:checked');
+        const count = checkboxes.length;
+        const bulkActions = document.getElementById('bulk-actions-brands');
+        const countSpan = document.getElementById('selected-count-brands');
+        
+        if (count > 0) {
+            bulkActions.style.display = 'flex';
+            countSpan.textContent = `${count} selected`;
+        } else {
+            bulkActions.style.display = 'none';
+        }
+        
+        // Update select all checkbox state
+        const allCheckboxes = document.querySelectorAll('.brand-checkbox');
+        const selectAll = document.getElementById('select-all-brands');
+        selectAll.checked = count === allCheckboxes.length && count > 0;
+        selectAll.indeterminate = count > 0 && count < allCheckboxes.length;
+    },
+    
+    getSelectedBrandIds() {
+        return Array.from(document.querySelectorAll('.brand-checkbox:checked')).map(cb => parseInt(cb.value));
+    },
+    
+    async bulkGenerateBrands() {
+        const ids = this.getSelectedBrandIds();
+        if (ids.length === 0) return;
+        
+        if (!confirm(`Generate SEO content for ${ids.length} brands? This may take a while.`)) return;
+        
+        this.toast(`Generating SEO for ${ids.length} brands...`, 'info');
+        
+        let success = 0;
+        let failed = 0;
+        
+        for (const id of ids) {
+            try {
+                await this.api(`/taxonomy-seo/brands/${id}/generate`, { method: 'POST' });
+                success++;
+                this.toast(`Generated ${success}/${ids.length}...`, 'info');
+            } catch (error) {
+                failed++;
+                console.error(`Failed to generate brand ${id}:`, error);
+            }
+        }
+        
+        this.toast(`Completed: ${success} generated, ${failed} failed`, success > 0 ? 'success' : 'error');
+        this.loadTaxonomySeoTab();
+    },
+    
+    async bulkPushBrands() {
+        const ids = this.getSelectedBrandIds();
+        if (ids.length === 0) return;
+        
+        if (!confirm(`Push SEO content for ${ids.length} brands to WordPress?`)) return;
+        
+        this.toast(`Pushing ${ids.length} brands to WordPress...`, 'info');
+        
+        let success = 0;
+        let failed = 0;
+        
+        for (const id of ids) {
+            try {
+                await this.api(`/taxonomy-seo/brands/${id}/push`, { method: 'POST' });
+                success++;
+            } catch (error) {
+                failed++;
+                console.error(`Failed to push brand ${id}:`, error);
+            }
+        }
+        
+        this.toast(`Completed: ${success} pushed, ${failed} failed`, success > 0 ? 'success' : 'error');
+    },
+    
+    // Bulk selection functions for Categories
+    toggleSelectAllCategories(checkbox) {
+        const checkboxes = document.querySelectorAll('.category-checkbox');
+        checkboxes.forEach(cb => cb.checked = checkbox.checked);
+        this.updateCategorySelection();
+    },
+    
+    updateCategorySelection() {
+        const checkboxes = document.querySelectorAll('.category-checkbox:checked');
+        const count = checkboxes.length;
+        const bulkActions = document.getElementById('bulk-actions-categories');
+        const countSpan = document.getElementById('selected-count-categories');
+        
+        if (count > 0) {
+            bulkActions.style.display = 'flex';
+            countSpan.textContent = `${count} selected`;
+        } else {
+            bulkActions.style.display = 'none';
+        }
+        
+        // Update select all checkbox state
+        const allCheckboxes = document.querySelectorAll('.category-checkbox');
+        const selectAll = document.getElementById('select-all-categories');
+        selectAll.checked = count === allCheckboxes.length && count > 0;
+        selectAll.indeterminate = count > 0 && count < allCheckboxes.length;
+    },
+    
+    getSelectedCategoryIds() {
+        return Array.from(document.querySelectorAll('.category-checkbox:checked')).map(cb => parseInt(cb.value));
+    },
+    
+    async bulkGenerateCategories() {
+        const ids = this.getSelectedCategoryIds();
+        if (ids.length === 0) return;
+        
+        if (!confirm(`Generate SEO content for ${ids.length} categories? This may take a while.`)) return;
+        
+        this.toast(`Generating SEO for ${ids.length} categories...`, 'info');
+        
+        let success = 0;
+        let failed = 0;
+        
+        for (const id of ids) {
+            try {
+                await this.api(`/taxonomy-seo/categories/${id}/generate`, { method: 'POST' });
+                success++;
+                this.toast(`Generated ${success}/${ids.length}...`, 'info');
+            } catch (error) {
+                failed++;
+                console.error(`Failed to generate category ${id}:`, error);
+            }
+        }
+        
+        this.toast(`Completed: ${success} generated, ${failed} failed`, success > 0 ? 'success' : 'error');
+        this.loadTaxonomySeoTab();
+    },
+    
+    async bulkPushCategories() {
+        const ids = this.getSelectedCategoryIds();
+        if (ids.length === 0) return;
+        
+        if (!confirm(`Push SEO content for ${ids.length} categories to WordPress?`)) return;
+        
+        this.toast(`Pushing ${ids.length} categories to WordPress...`, 'info');
+        
+        let success = 0;
+        let failed = 0;
+        
+        for (const id of ids) {
+            try {
+                await this.api(`/taxonomy-seo/categories/${id}/push`, { method: 'POST' });
+                success++;
+            } catch (error) {
+                failed++;
+                console.error(`Failed to push category ${id}:`, error);
+            }
+        }
+        
+        this.toast(`Completed: ${success} pushed, ${failed} failed`, success > 0 ? 'success' : 'error');
     },
     
     async editBrandSeo(id) {
