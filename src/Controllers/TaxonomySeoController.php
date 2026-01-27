@@ -34,7 +34,7 @@ class TaxonomySeoController
                     (SELECT COUNT(DISTINCT pc.id) 
                      FROM wp_products p 
                      JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
-                     WHERE p.brand_id = b.id AND p.stock_status = 'instock' AND pc.parent_id = 0
+                     WHERE p.brand_id = b.id AND p.stock_status = 'instock'
                      AND pc.slug NOT LIKE '%sale%' AND pc.name NOT LIKE '%Sale%'
                     ) as category_count
                  FROM wp_brands b
@@ -115,13 +115,14 @@ class TaxonomySeoController
             }
             
             // Get categories this brand has products in (exclude sale categories)
+            // Include all categories, not just top-level parents
             $categories = Database::query(
-                "SELECT DISTINCT pc.id, pc.name, pc.slug, COUNT(p.id) as product_count
+                "SELECT DISTINCT pc.id, pc.name, pc.slug, pc.parent_id, COUNT(p.id) as product_count
                  FROM wp_products p
                  JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
-                 WHERE p.brand_id = ? AND p.stock_status = 'instock' AND pc.parent_id = 0
+                 WHERE p.brand_id = ? AND p.stock_status = 'instock'
                  AND pc.slug NOT LIKE '%sale%' AND pc.name NOT LIKE '%Sale%'
-                 GROUP BY pc.id
+                 GROUP BY pc.id, pc.name, pc.slug, pc.parent_id
                  ORDER BY product_count DESC",
                 [$id]
             );
@@ -216,7 +217,7 @@ class TaxonomySeoController
             }
             
             // First try: Get categories with stock_status filter
-            // Exclude sale-related categories
+            // Exclude sale-related categories and generic top-level categories
             $categories = Database::query(
                 "SELECT DISTINCT pc.name, pc.slug, pc.parent_id, COUNT(p.id) as product_count
                  FROM wp_products p
@@ -224,6 +225,7 @@ class TaxonomySeoController
                  WHERE p.brand_id = ? AND p.stock_status = 'instock'
                  AND pc.slug NOT LIKE '%sale%'
                  AND pc.name NOT LIKE '%Sale%'
+                 AND pc.slug NOT IN ('woman', 'women', 'man', 'men', 'clothing', 'accessories', 'all')
                  GROUP BY pc.id, pc.name, pc.slug, pc.parent_id
                  ORDER BY product_count DESC
                  LIMIT 15",
@@ -242,6 +244,7 @@ class TaxonomySeoController
                      WHERE p.brand_id = ?
                      AND pc.slug NOT LIKE '%sale%'
                      AND pc.name NOT LIKE '%Sale%'
+                     AND pc.slug NOT IN ('woman', 'women', 'man', 'men', 'clothing', 'accessories', 'all')
                      GROUP BY pc.id, pc.name, pc.slug, pc.parent_id
                      ORDER BY product_count DESC
                      LIMIT 15",
@@ -250,13 +253,8 @@ class TaxonomySeoController
                 error_log("generateBrandSeo: Found " . count($categories) . " categories (without stock filter)");
             }
             
-            // Filter to prefer parent categories if we have them
-            $parentCategories = array_filter($categories, fn($c) => $c['parent_id'] == 0 || $c['parent_id'] === null);
-            if (!empty($parentCategories)) {
-                $categories = array_slice($parentCategories, 0, 10);
-            } else {
-                $categories = array_slice($categories, 0, 10);
-            }
+            // Take top 10 by product count (generic categories already excluded in SQL)
+            $categories = array_slice($categories, 0, 10);
             
             if (!empty($categories)) {
                 error_log("generateBrandSeo: Final categories: " . json_encode(array_column($categories, 'name')));
