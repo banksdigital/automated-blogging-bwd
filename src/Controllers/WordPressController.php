@@ -825,4 +825,63 @@ public function syncProducts(): void
             echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
         }
     }
+
+    /**
+     * Test brand-product relationship API
+     * Call: GET /api/wordpress/test-brand-products/{brand_local_id}
+     */
+    public function testBrandProducts(int $brandId): void
+    {
+        try {
+            $brand = Database::queryOne("SELECT * FROM wp_brands WHERE id = ?", [$brandId]);
+            
+            if (!$brand) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Brand not found']]);
+                return;
+            }
+            
+            $service = new WordPressService($this->config);
+            
+            // Test the API call
+            $wpTermId = $brand['wp_term_id'];
+            $baseUrl = rtrim($this->config['wordpress']['api_url'], '/');
+            $testUrl = "{$baseUrl}/wp/v2/product?brand={$wpTermId}&per_page=5&_fields=id,title";
+            
+            // Make direct test call
+            $ch = curl_init($testUrl);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Basic ' . base64_encode($this->config['wordpress']['username'] . ':' . $this->config['wordpress']['password'])
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            $products = json_decode($response, true);
+            
+            // Also get total product count to compare
+            $totalProducts = Database::queryOne("SELECT COUNT(*) as cnt FROM wp_products")['cnt'];
+            
+            echo json_encode([
+                'success' => true,
+                'data' => [
+                    'brand' => $brand['name'],
+                    'wp_term_id' => $wpTermId,
+                    'test_url' => $testUrl,
+                    'http_code' => $httpCode,
+                    'products_returned' => is_array($products) ? count($products) : 0,
+                    'total_products_in_db' => $totalProducts,
+                    'sample_products' => is_array($products) ? array_slice($products, 0, 3) : [],
+                    'filter_working' => is_array($products) && count($products) < $totalProducts && count($products) > 0,
+                    'raw_response_preview' => substr($response, 0, 1000)
+                ]
+            ], JSON_PRETTY_PRINT);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+        }
+    }
 }

@@ -433,8 +433,9 @@ public function getProductIdsByBrand(int $brandTermId): array
     $perPage = 100;
     
     do {
-        // Query WooCommerce products API filtered by brand taxonomy
-        $url = $this->baseUrl . "/wc/v3/products?brand={$brandTermId}&per_page={$perPage}&page={$page}&status=publish";
+        // Use WordPress REST API to get products with this brand term
+        // The 'brand' taxonomy should expose products via /wp/v2/product?brand=TERM_ID
+        $url = $this->baseUrl . "/wp/v2/product?brand={$brandTermId}&per_page={$perPage}&page={$page}&status=publish&_fields=id";
         
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -445,25 +446,37 @@ public function getProductIdsByBrand(int $brandTermId): array
         ]);
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $totalPages = curl_getinfo($ch, CURLINFO_HEADER_SIZE); // We'll get this from headers
         curl_close($ch);
         
         if ($httpCode !== 200) {
-            error_log("getProductIdsByBrand: Failed to get products for brand {$brandTermId}: HTTP {$httpCode}");
-            break;
+            error_log("getProductIdsByBrand: WP REST API failed for brand {$brandTermId}: HTTP {$httpCode}");
+            error_log("getProductIdsByBrand: Response: " . substr($response, 0, 500));
+            return [];
         }
         
         $products = json_decode($response, true);
-        if (empty($products)) {
+        
+        if (!is_array($products) || empty($products)) {
             break;
         }
         
         foreach ($products as $product) {
-            $productIds[] = $product['id'];
+            if (isset($product['id'])) {
+                $productIds[] = $product['id'];
+            }
         }
         
         $page++;
         
+        // Safety limit - max 10 pages (1000 products per brand)
+        if ($page > 10) {
+            break;
+        }
+        
     } while (count($products) === $perPage);
+    
+    error_log("getProductIdsByBrand: Found " . count($productIds) . " products for brand term {$brandTermId}");
     
     return $productIds;
 }

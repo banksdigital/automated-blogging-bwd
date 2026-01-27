@@ -218,6 +218,9 @@ function routeApi(string $path, string $method, array $config): void
         case preg_match('#^/wordpress/debug/category/(\d+)$#', $path, $m) && $method === 'GET':
             (new \App\Controllers\WordPressController($config))->debugCategoryApi((int)$m[1]);
             break;
+        case preg_match('#^/wordpress/test-brand-products/(\d+)$#', $path, $m) && $method === 'GET':
+            (new \App\Controllers\WordPressController($config))->testBrandProducts((int)$m[1]);
+            break;
         case $path === '/wordpress/test' && $method === 'POST':
             (new \App\Controllers\WordPressController($config))->testConnection($input);
             break;
