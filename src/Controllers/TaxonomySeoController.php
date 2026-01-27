@@ -190,17 +190,32 @@ class TaxonomySeoController
                 return;
             }
             
-            // Get categories this brand has products in
+            // Get categories this brand has products in (parent categories only for cleaner links)
             $categories = Database::query(
                 "SELECT DISTINCT pc.name, pc.slug, COUNT(p.id) as product_count
                  FROM wp_products p
                  JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
                  WHERE p.brand_id = ? AND p.stock_status = 'instock' AND pc.parent_id = 0
-                 GROUP BY pc.id
+                 GROUP BY pc.id, pc.name, pc.slug
                  ORDER BY product_count DESC
                  LIMIT 10",
                 [$id]
             );
+            
+            // Debug log
+            error_log("generateBrandSeo: Brand '{$brand['name']}' has " . count($categories) . " categories");
+            if (!empty($categories)) {
+                error_log("Categories: " . json_encode(array_column($categories, 'name')));
+            }
+            
+            if (empty($categories)) {
+                http_response_code(400);
+                echo json_encode([
+                    'success' => false, 
+                    'error' => ['message' => "No products found for brand '{$brand['name']}'. Sync products first."]
+                ]);
+                return;
+            }
             
             $claudeService = new ClaudeService($this->config);
             $content = $claudeService->generateBrandSeo($brand, $categories);
@@ -214,9 +229,13 @@ class TaxonomySeoController
             echo json_encode([
                 'success' => true,
                 'data' => $content,
-                'message' => 'Brand SEO content generated'
+                'context' => [
+                    'categories_used' => array_map(fn($c) => $c['name'], $categories)
+                ],
+                'message' => 'Brand SEO content generated using ' . count($categories) . ' categories'
             ]);
         } catch (\Exception $e) {
+            error_log("generateBrandSeo error: " . $e->getMessage());
             http_response_code(500);
             echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
         }
@@ -242,20 +261,82 @@ class TaxonomySeoController
                  FROM wp_products p
                  JOIN wp_brands b ON p.brand_id = b.id
                  WHERE JSON_CONTAINS(p.category_slugs, CONCAT('\"', ?, '\"')) AND p.stock_status = 'instock'
-                 GROUP BY b.id
+                 GROUP BY b.id, b.name, b.slug
                  ORDER BY product_count DESC
-                 LIMIT 10",
+                 LIMIT 15",
                 [$category['slug']]
             );
             
+            // Get related categories (sibling categories - same parent, or children if this is a parent)
+            $relatedCategories = [];
+            
+            if ($category['parent_id'] > 0) {
+                // This is a child category - get siblings (same parent)
+                $relatedCategories = Database::query(
+                    "SELECT name, slug FROM wp_product_categories 
+                     WHERE parent_id = ? AND id != ? AND count > 0
+                     ORDER BY count DESC LIMIT 5",
+                    [$category['parent_id'], $id]
+                );
+                
+                // Also get parent category
+                $parent = Database::queryOne(
+                    "SELECT name, slug FROM wp_product_categories WHERE wp_term_id = ?",
+                    [$category['parent_id']]
+                );
+                if ($parent) {
+                    array_unshift($relatedCategories, $parent);
+                }
+            } else {
+                // This is a parent category - get child categories
+                $relatedCategories = Database::query(
+                    "SELECT name, slug FROM wp_product_categories 
+                     WHERE parent_id = ? AND count > 0
+                     ORDER BY count DESC LIMIT 8",
+                    [$category['wp_term_id']]
+                );
+            }
+            
+            // Debug log
+            error_log("generateCategorySeo: Category '{$category['name']}' has " . count($brands) . " brands");
+            if (!empty($brands)) {
+                error_log("Brands: " . json_encode(array_column($brands, 'name')));
+            }
+            error_log("Related categories: " . count($relatedCategories));
+            
+            if (empty($brands)) {
+                http_response_code(400);
+                echo json_encode([
+                    'success' => false, 
+                    'error' => ['message' => "No products found in category '{$category['name']}'. Sync products first."]
+                ]);
+                return;
+            }
+            
             $claudeService = new ClaudeService($this->config);
-            $content = $claudeService->generateCategorySeo($category, $brands);
+            $content = $claudeService->generateCategorySeo($category, $brands, $relatedCategories);
             
             // Save to database
             Database::execute(
                 "UPDATE wp_product_categories SET seo_description = ?, seo_meta_description = ?, seo_updated_at = NOW() WHERE id = ?",
                 [$content['description'], $content['meta_description'], $id]
             );
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $content,
+                'context' => [
+                    'brands_used' => array_map(fn($b) => $b['name'], $brands),
+                    'related_categories' => array_map(fn($c) => $c['name'], $relatedCategories)
+                ],
+                'message' => 'Category SEO content generated using ' . count($brands) . ' brands'
+            ]);
+        } catch (\Exception $e) {
+            error_log("generateCategorySeo error: " . $e->getMessage());
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+        }
+    }
             
             echo json_encode([
                 'success' => true,

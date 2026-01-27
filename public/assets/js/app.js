@@ -1764,7 +1764,15 @@ const App = {
         
         try {
             const result = await this.api(`/taxonomy-seo/brands/${id}/generate`, { method: 'POST' });
-            this.toast('Brand SEO generated!', 'success');
+            
+            // Show context in toast
+            let message = 'Brand SEO generated!';
+            if (result.context && result.context.categories_used) {
+                message += ` Used ${result.context.categories_used.length} categories: ${result.context.categories_used.slice(0, 3).join(', ')}${result.context.categories_used.length > 3 ? '...' : ''}`;
+            }
+            this.toast(message, 'success');
+            console.log('Brand SEO context:', result.context);
+            
             this.loadTaxonomySeoTab();
         } catch (error) {
             this.toast(error.message, 'error');
@@ -1783,7 +1791,15 @@ const App = {
         
         try {
             const result = await this.api(`/taxonomy-seo/categories/${id}/generate`, { method: 'POST' });
-            this.toast('Category SEO generated!', 'success');
+            
+            // Show context in toast
+            let message = 'Category SEO generated!';
+            if (result.context && result.context.brands_used) {
+                message += ` Used ${result.context.brands_used.length} brands: ${result.context.brands_used.slice(0, 3).join(', ')}${result.context.brands_used.length > 3 ? '...' : ''}`;
+            }
+            this.toast(message, 'success');
+            console.log('Category SEO context:', result.context);
+            
             this.loadTaxonomySeoTab();
         } catch (error) {
             this.toast(error.message, 'error');
