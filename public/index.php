@@ -212,6 +212,12 @@ function routeApi(string $path, string $method, array $config): void
         case $path === '/wordpress/sync/status' && $method === 'GET':
             (new \App\Controllers\WordPressController($config))->syncStatus();
             break;
+        case preg_match('#^/wordpress/debug/brand/(\d+)$#', $path, $m) && $method === 'GET':
+            (new \App\Controllers\WordPressController($config))->debugBrandApi((int)$m[1]);
+            break;
+        case preg_match('#^/wordpress/debug/category/(\d+)$#', $path, $m) && $method === 'GET':
+            (new \App\Controllers\WordPressController($config))->debugCategoryApi((int)$m[1]);
+            break;
         case $path === '/wordpress/test' && $method === 'POST':
             (new \App\Controllers\WordPressController($config))->testConnection($input);
             break;

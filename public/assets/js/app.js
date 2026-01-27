@@ -1537,6 +1537,9 @@ const App = {
                         <h1 class="page-title">Taxonomy SEO</h1>
                         <p class="page-subtitle">Generate and manage SEO content for brands and categories</p>
                     </div>
+                    <div>
+                        <button class="btn btn-secondary" onclick="App.testTaxonomyApi()">🔧 Test API Connection</button>
+                    </div>
                 </div>
                 
                 <!-- Tab Navigation -->
@@ -1547,6 +1550,17 @@ const App = {
                 
                 <div id="taxonomy-seo-content">
                     <div class="loading"><div class="spinner"></div></div>
+                </div>
+                
+                <!-- Debug Modal -->
+                <div id="debug-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;overflow-y:auto;padding:20px;">
+                    <div style="background:var(--bg-card);padding:32px;border-radius:8px;width:100%;max-width:800px;margin:auto;">
+                        <h2 style="margin-bottom:24px;">🔧 API Debug Results</h2>
+                        <pre id="debug-results" style="background:var(--bg-tertiary);padding:16px;border-radius:4px;overflow-x:auto;font-size:12px;max-height:400px;overflow-y:auto;"></pre>
+                        <div style="margin-top:16px;text-align:right;">
+                            <button class="btn btn-secondary" onclick="document.getElementById('debug-modal').style.display='none'">Close</button>
+                        </div>
+                    </div>
                 </div>
                 
                 <!-- Edit Modal -->
@@ -1881,6 +1895,73 @@ const App = {
             this.toast('SEO content pulled from WordPress!', 'success');
         } catch (error) {
             this.toast(error.message, 'error');
+        }
+    },
+    
+    async testTaxonomyApi() {
+        const modal = document.getElementById('debug-modal');
+        const results = document.getElementById('debug-results');
+        
+        modal.style.display = 'flex';
+        results.textContent = 'Testing WordPress REST API connection...\n\n';
+        
+        try {
+            // Get first brand from our database to test
+            const brands = await this.api('/taxonomy-seo/brands');
+            if (brands.length > 0) {
+                const firstBrand = brands[0];
+                results.textContent += `Testing brand: "${firstBrand.name}" (wp_term_id: ${firstBrand.wp_term_id})\n`;
+                results.textContent += '─'.repeat(50) + '\n\n';
+                
+                // Call debug endpoint
+                const debugResult = await this.api(`/wordpress/debug/brand/${firstBrand.wp_term_id}`);
+                
+                // Show single endpoint results
+                const single = debugResult.debug.single_endpoint;
+                results.textContent += `📡 Single Brand Endpoint: ${single.url}\n`;
+                results.textContent += `   HTTP Status: ${single.http_code}\n`;
+                results.textContent += `   Has 'acf' key: ${single.has_acf_key ? '✅ YES' : '❌ NO'}\n`;
+                
+                if (single.has_acf_key && single.acf_fields) {
+                    results.textContent += `   ACF Fields: ${JSON.stringify(single.acf_fields, null, 2)}\n`;
+                }
+                
+                results.textContent += '\n';
+                
+                // Show list endpoint results
+                const list = debugResult.debug.list_endpoint;
+                results.textContent += `📡 Brand List Endpoint: ${list.url}\n`;
+                results.textContent += `   HTTP Status: ${list.http_code}\n`;
+                results.textContent += `   First item has 'acf' key: ${list.first_item_has_acf ? '✅ YES' : '❌ NO'}\n`;
+                
+                if (list.first_item_has_acf && list.first_item_acf) {
+                    results.textContent += `   First item ACF Fields: ${JSON.stringify(list.first_item_acf, null, 2)}\n`;
+                }
+                
+                results.textContent += '\n' + '─'.repeat(50) + '\n\n';
+                
+                if (single.has_acf_key || list.first_item_has_acf) {
+                    results.textContent += '✅ SUCCESS: ACF fields are visible in the REST API!\n\n';
+                    results.textContent += 'If sync still shows "0 with SEO content", the fields might be empty in WordPress.\n';
+                    results.textContent += 'Check that your brands actually have content in the taxonomy_description field.';
+                } else {
+                    results.textContent += '❌ PROBLEM: ACF fields are NOT visible in the REST API!\n\n';
+                    results.textContent += 'Please check the following in WordPress:\n\n';
+                    results.textContent += '1. Go to ACF → Field Groups\n';
+                    results.textContent += '2. Edit the field group with taxonomy_description\n';
+                    results.textContent += '3. Click "Settings" tab at the top\n';
+                    results.textContent += '4. Ensure "Show in REST API" is toggled ON\n';
+                    results.textContent += '5. Check Location Rules show: Taxonomy = Brand\n';
+                    results.textContent += '6. Save the field group\n';
+                    results.textContent += '7. Clear any caches (WordPress, WP Rocket, etc.)\n\n';
+                    results.textContent += 'Raw response keys found: ' + single.all_keys.join(', ');
+                }
+            } else {
+                results.textContent = 'No brands found in database.\n\nPlease sync brands first via Settings → Sync Data.';
+            }
+        } catch (error) {
+            results.textContent = 'Error: ' + error.message + '\n\nCheck the browser console for more details.';
+            console.error('testTaxonomyApi error:', error);
         }
     },
 
@@ -2360,7 +2441,17 @@ const App = {
         this.toast(`Syncing ${type}...`);
         try {
             const result = await this.api(`/wordpress/sync/${type}`, { method: 'POST' });
-            this.toast(result.message || `${type} synced successfully!`, 'success');
+            
+            // Show detailed debug info if available
+            let message = result.message || `${type} synced successfully!`;
+            if (result.debug && Object.keys(result.debug).length > 0) {
+                console.log('Sync debug info:', result.debug);
+                if (result.debug.has_acf_key === false) {
+                    message += '\n\n⚠️ Debug: No ACF fields found in API response. Check ACF field group settings.';
+                }
+            }
+            
+            this.toast(message, 'success');
             this.loadSync();
         } catch (error) {
             this.toast(error.message || 'Sync failed', 'error');

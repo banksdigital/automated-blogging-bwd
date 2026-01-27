@@ -456,11 +456,19 @@ public function getAllBrandsWithAcf(): array
             break;
         }
         
-        // Log first brand to help debug ACF field availability
+        // Debug: log first brand's full structure on first page
         if ($page === 1 && !empty($pageBrands[0])) {
-            $hasAcf = isset($pageBrands[0]['acf']) ? 'yes' : 'no';
-            $acfFields = isset($pageBrands[0]['acf']) ? implode(', ', array_keys($pageBrands[0]['acf'])) : 'none';
-            error_log("Brand sync: ACF present={$hasAcf}, fields={$acfFields}");
+            $firstBrand = $pageBrands[0];
+            $keys = array_keys($firstBrand);
+            error_log("Brand API response keys: " . implode(', ', $keys));
+            
+            if (isset($firstBrand['acf'])) {
+                error_log("ACF fields found: " . json_encode($firstBrand['acf']));
+            } else {
+                error_log("WARNING: No 'acf' key in brand response. Available keys: " . implode(', ', $keys));
+                // Log the full first brand for debugging
+                error_log("Full first brand response: " . json_encode($firstBrand));
+            }
         }
         
         $brands = array_merge($brands, $pageBrands);

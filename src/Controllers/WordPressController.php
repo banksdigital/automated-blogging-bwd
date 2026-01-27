@@ -136,17 +136,38 @@ class WordPressController
             $synced = 0;
             $withSeo = 0;
             $hasAcfFields = false;
+            $debugInfo = [];
+            
+            // Debug: log first brand's full structure
+            if (!empty($brands[0])) {
+                $debugInfo['first_brand_keys'] = array_keys($brands[0]);
+                $debugInfo['has_acf_key'] = isset($brands[0]['acf']);
+                if (isset($brands[0]['acf'])) {
+                    $debugInfo['acf_content'] = $brands[0]['acf'];
+                }
+                error_log("First brand structure: " . json_encode(array_keys($brands[0])));
+                if (isset($brands[0]['acf'])) {
+                    error_log("First brand ACF fields: " . json_encode($brands[0]['acf']));
+                } else {
+                    error_log("First brand has NO 'acf' key. Full data: " . substr(json_encode($brands[0]), 0, 500));
+                }
+            }
             
             foreach ($brands as $brand) {
                 // Check if any brand has ACF fields (indicates REST API is enabled)
-                if (isset($brand['acf'])) {
+                if (isset($brand['acf']) && !empty($brand['acf'])) {
                     $hasAcfFields = true;
                 }
                 
                 // Extract ACF fields if present
                 $acf = $brand['acf'] ?? [];
-                $seoDescription = $acf['taxonomy_description'] ?? null;
-                $seoMetaDescription = $acf['taxonomy_seo_description'] ?? null;
+                $seoDescription = !empty($acf['taxonomy_description']) ? $acf['taxonomy_description'] : null;
+                $seoMetaDescription = !empty($acf['taxonomy_seo_description']) ? $acf['taxonomy_seo_description'] : null;
+                
+                // FORCE truncate meta description to avoid column error
+                if ($seoMetaDescription) {
+                    $seoMetaDescription = mb_substr($seoMetaDescription, 0, 155);
+                }
                 
                 // Track if this brand has SEO content
                 if ($seoDescription || $seoMetaDescription) {
@@ -181,7 +202,7 @@ class WordPressController
             // Build message with warning if ACF fields not found
             $message = "Synced {$synced} brands ({$withSeo} with SEO content)";
             if (!$hasAcfFields && $synced > 0) {
-                $message .= ". ⚠️ ACF fields not found - enable 'Show in REST API' in ACF field group settings.";
+                $message .= ". ⚠️ ACF fields not found in API response - check that 'Show in REST API' is enabled for the field group.";
             }
 
             echo json_encode([
@@ -190,7 +211,8 @@ class WordPressController
                     'synced' => $synced, 
                     'with_seo' => $withSeo,
                     'acf_enabled' => $hasAcfFields,
-                    'message' => $message
+                    'message' => $message,
+                    'debug' => $debugInfo
                 ]
             ]);
 
@@ -216,6 +238,22 @@ class WordPressController
             $synced = 0;
             $withSeo = 0;
             $hasAcfFields = false;
+            $debugInfo = [];
+            
+            // Debug: log first category's ACF data
+            if (!empty($categories[0])) {
+                $debugInfo['first_category_keys'] = array_keys($categories[0]);
+                $debugInfo['has_acf_key'] = isset($categories[0]['acf']);
+                if (isset($categories[0]['acf'])) {
+                    $debugInfo['acf_content'] = $categories[0]['acf'];
+                }
+                error_log("First category keys: " . json_encode(array_keys($categories[0])));
+                if (isset($categories[0]['acf'])) {
+                    error_log("First category ACF: " . json_encode($categories[0]['acf']));
+                } else {
+                    error_log("First category has NO 'acf' key");
+                }
+            }
             
             foreach ($categories as $cat) {
                 // Check if any category has ACF fields
@@ -225,8 +263,13 @@ class WordPressController
                 
                 // Extract ACF fields if present
                 $acf = $cat['acf'] ?? [];
-                $seoDescription = $acf['taxonomy_description'] ?? null;
-                $seoMetaDescription = $acf['taxonomy_seo_description'] ?? null;
+                $seoDescription = !empty($acf['taxonomy_description']) ? $acf['taxonomy_description'] : null;
+                $seoMetaDescription = !empty($acf['taxonomy_seo_description']) ? $acf['taxonomy_seo_description'] : null;
+                
+                // FORCE truncate meta description to avoid column error
+                if ($seoMetaDescription) {
+                    $seoMetaDescription = mb_substr($seoMetaDescription, 0, 155);
+                }
                 
                 // Track if this category has SEO content
                 if ($seoDescription || $seoMetaDescription) {
@@ -262,7 +305,7 @@ class WordPressController
             // Build message with warning if ACF fields not found
             $message = "Synced {$synced} product categories ({$withSeo} with SEO content)";
             if (!$hasAcfFields && $synced > 0) {
-                $message .= ". ⚠️ ACF fields not found - enable 'Show in REST API' in ACF field group settings.";
+                $message .= ". ⚠️ ACF fields not found in API response.";
             }
 
             echo json_encode([
@@ -271,7 +314,8 @@ class WordPressController
                     'synced' => $synced,
                     'with_seo' => $withSeo,
                     'acf_enabled' => $hasAcfFields,
-                    'message' => $message
+                    'message' => $message,
+                    'debug' => $debugInfo
                 ]
             ]);
 
@@ -647,6 +691,133 @@ public function syncProducts(): void
                 'success' => false,
                 'error' => ['message' => $e->getMessage()]
             ]);
+        }
+    }
+
+    /**
+     * Debug endpoint to test what WordPress API returns for a brand
+     * Access via: GET /wordpress/debug/brand/{term_id}
+     */
+    public function debugBrandApi(int $termId): void
+    {
+        try {
+            $baseUrl = rtrim($this->config['wordpress']['api_url'], '/');
+            $username = $this->config['wordpress']['username'];
+            $password = $this->config['wordpress']['password'];
+            
+            // Test 1: Single brand endpoint
+            $url = $baseUrl . "/wp/v2/brand/{$termId}";
+            
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Basic ' . base64_encode($username . ':' . $password)
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+            
+            $data = json_decode($response, true);
+            
+            // Test 2: List endpoint (first page)
+            $listUrl = $baseUrl . "/wp/v2/brand?per_page=1";
+            $ch2 = curl_init($listUrl);
+            curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch2, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch2, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Basic ' . base64_encode($username . ':' . $password)
+            ]);
+            $listResponse = curl_exec($ch2);
+            $listHttpCode = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+            curl_close($ch2);
+            
+            $listData = json_decode($listResponse, true);
+            
+            echo json_encode([
+                'success' => true,
+                'debug' => [
+                    'single_endpoint' => [
+                        'url' => $url,
+                        'http_code' => $httpCode,
+                        'curl_error' => $curlError ?: null,
+                        'has_acf_key' => isset($data['acf']),
+                        'acf_fields' => $data['acf'] ?? null,
+                        'all_keys' => is_array($data) ? array_keys($data) : [],
+                    ],
+                    'list_endpoint' => [
+                        'url' => $listUrl,
+                        'http_code' => $listHttpCode,
+                        'first_item_has_acf' => isset($listData[0]['acf']),
+                        'first_item_acf' => $listData[0]['acf'] ?? null,
+                        'first_item_keys' => isset($listData[0]) ? array_keys($listData[0]) : [],
+                    ],
+                    'raw_single_response' => substr($response, 0, 2000),
+                    'tips' => [
+                        'If has_acf_key is false, check:',
+                        '1. ACF field group has "Show in REST API" enabled',
+                        '2. Field group location rules target "Taxonomy" equals "brand"',
+                        '3. Clear any WordPress/ACF caches'
+                    ]
+                ]
+            ], JSON_PRETTY_PRINT);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Debug endpoint to test what WordPress API returns for a product category
+     * Access via: GET /wordpress/debug/category/{term_id}
+     */
+    public function debugCategoryApi(int $termId): void
+    {
+        try {
+            $baseUrl = rtrim($this->config['wordpress']['api_url'], '/');
+            $username = $this->config['wordpress']['username'];
+            $password = $this->config['wordpress']['password'];
+            
+            $url = $baseUrl . "/wp/v2/product_cat/{$termId}";
+            
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Basic ' . base64_encode($username . ':' . $password)
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+            
+            $data = json_decode($response, true);
+            
+            echo json_encode([
+                'success' => true,
+                'debug' => [
+                    'url' => $url,
+                    'http_code' => $httpCode,
+                    'curl_error' => $curlError ?: null,
+                    'has_acf_key' => isset($data['acf']),
+                    'acf_fields' => $data['acf'] ?? null,
+                    'all_keys' => is_array($data) ? array_keys($data) : [],
+                    'raw_response_preview' => substr($response, 0, 2000),
+                    'tips' => [
+                        'If has_acf_key is false, check:',
+                        '1. ACF field group has "Show in REST API" enabled',
+                        '2. Field group location rules target "Taxonomy" equals "product_cat"',
+                        '3. Clear any WordPress/ACF caches'
+                    ]
+                ]
+            ], JSON_PRETTY_PRINT);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         }
     }
 }
