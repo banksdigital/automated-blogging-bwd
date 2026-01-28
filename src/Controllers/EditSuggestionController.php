@@ -2,7 +2,7 @@
 
 namespace App\Controllers;
 
-use App\Core\Database;
+use App\Helpers\Database;
 use App\Services\WordPressService;
 
 class EditSuggestionController

@@ -333,37 +333,45 @@ function routeApi(string $path, string $method, array $config): void
             echo json_encode(['success' => true, 'data' => 'Edit suggestions route works']);
             break;
         case $path === '/edit-suggestions' && $method === 'GET':
-            // Inline test - bypass controller to check if issue is in controller
-            try {
-                $tableCheck = \App\Core\Database::query(
-                    "SELECT COUNT(*) as cnt FROM information_schema.tables 
-                     WHERE table_schema = DATABASE() 
-                     AND table_name = 'edit_suggestions'"
-                );
-                $tableExists = (int)($tableCheck[0]['cnt'] ?? 0) > 0;
-                
-                if (!$tableExists) {
-                    echo json_encode([
-                        'success' => true,
-                        'data' => [],
-                        'message' => 'Table edit_suggestions does not exist. Run the SQL migration.'
-                    ]);
-                } else {
-                    $edits = \App\Core\Database::query("SELECT * FROM edit_suggestions ORDER BY name ASC");
-                    foreach ($edits as &$edit) {
-                        $edit['matching_rules'] = json_decode($edit['matching_rules'] ?? '{}', true);
-                        $edit['total_products'] = 0;
-                        $edit['in_stock_products'] = 0;
-                        $edit['pending_products'] = 0;
-                        $edit['synced_products'] = 0;
-                    }
-                    echo json_encode(['success' => true, 'data' => $edits]);
-                }
-            } catch (\Exception $e) {
-                http_response_code(500);
-                echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
-            }
+            // TEMP DEBUG: Return hardcoded to confirm route works
+            echo json_encode(['success' => true, 'data' => [], 'debug' => 'hardcoded response - route works']);
             break;
+            
+            // DISABLED FOR NOW - actual query code
+            /*
+            try {
+                $count = \App\Helpers\Database::query("SELECT COUNT(*) as cnt FROM edit_suggestions");
+                $numRows = (int)($count[0]['cnt'] ?? 0);
+                
+                if ($numRows === 0) {
+                    echo json_encode(['success' => true, 'data' => []]);
+                    break;
+                }
+                
+                $edits = \App\Helpers\Database::query("SELECT id, name, slug, status, source_type FROM edit_suggestions ORDER BY name ASC");
+                
+                $result = [];
+                foreach ($edits as $edit) {
+                    $result[] = [
+                        'id' => $edit['id'],
+                        'name' => $edit['name'],
+                        'slug' => $edit['slug'],
+                        'status' => $edit['status'],
+                        'source_type' => $edit['source_type'],
+                        'matching_rules' => [],
+                        'total_products' => 0,
+                        'in_stock_products' => 0,
+                        'pending_products' => 0,
+                        'synced_products' => 0
+                    ];
+                }
+                
+                echo json_encode(['success' => true, 'data' => $result]);
+            } catch (\Throwable $e) {
+                http_response_code(500);
+                echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage(), 'line' => $e->getLine()]]);
+            }
+            */
         case $path === '/edit-suggestions' && $method === 'POST':
             // Inline create
             try {
@@ -375,7 +383,7 @@ function routeApi(string $path, string $method, array $config): void
                 }
                 $slug = strtolower(preg_replace('/[^a-z0-9]+/', '-', $name));
                 $rules = ['categories' => $input['categories'] ?? [], 'keywords' => $input['keywords'] ?? [], 'colors' => $input['colors'] ?? []];
-                $id = \App\Core\Database::insert(
+                $id = \App\Helpers\Database::insert(
                     "INSERT INTO edit_suggestions (name, slug, description, source_type, matching_rules, status) VALUES (?, ?, ?, 'manual', ?, 'suggested')",
                     [$name, $slug, $input['description'] ?? '', json_encode($rules)]
                 );
@@ -388,7 +396,7 @@ function routeApi(string $path, string $method, array $config): void
         case $path === '/edit-suggestions/generate' && $method === 'POST':
             // Inline generate suggestions
             try {
-                $tableCheck = \App\Core\Database::query(
+                $tableCheck = \App\Helpers\Database::query(
                     "SELECT COUNT(*) as cnt FROM information_schema.tables 
                      WHERE table_schema = DATABASE() AND table_name = 'edit_suggestions'"
                 );
@@ -417,12 +425,12 @@ function routeApi(string $path, string $method, array $config): void
                 $skipped = 0;
                 foreach ($templates as $t) {
                     $slug = strtolower(preg_replace('/[^a-z0-9]+/', '-', str_replace("'", '', $t['name'])));
-                    $existing = \App\Core\Database::queryOne("SELECT id FROM edit_suggestions WHERE slug = ?", [$slug]);
+                    $existing = \App\Helpers\Database::queryOne("SELECT id FROM edit_suggestions WHERE slug = ?", [$slug]);
                     if ($existing) {
                         $skipped++;
                         continue;
                     }
-                    \App\Core\Database::insert(
+                    \App\Helpers\Database::insert(
                         "INSERT INTO edit_suggestions (name, slug, description, source_type, matching_rules, status) VALUES (?, ?, ?, ?, ?, 'suggested')",
                         [$t['name'], $slug, $t['desc'], $t['type'], json_encode($t['rules'])]
                     );
