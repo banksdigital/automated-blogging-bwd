@@ -377,7 +377,7 @@ function routeApi(string $path, string $method, array $config): void
                     echo json_encode(['success' => false, 'error' => ['message' => 'Name required']]);
                     break;
                 }
-                $slug = strtolower(preg_replace('/[^a-z0-9]+/', '-', $name));
+                $slug = trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($name)), '-');
                 $rules = ['categories' => $input['categories'] ?? [], 'keywords' => $input['keywords'] ?? [], 'colors' => $input['colors'] ?? []];
                 $id = \App\Helpers\Database::insert(
                     "INSERT INTO edit_suggestions (name, slug, description, source_type, matching_rules, status) VALUES (?, ?, ?, 'manual', ?, 'suggested')",
@@ -423,7 +423,8 @@ function routeApi(string $path, string $method, array $config): void
                 
                 foreach ($templates as $t) {
                     try {
-                        $slug = strtolower(preg_replace('/[^a-z0-9]+/', '-', str_replace("'", '', $t['name'])));
+                        // IMPORTANT: strtolower FIRST, then remove non-alphanumeric
+                        $slug = preg_replace('/[^a-z0-9]+/', '-', strtolower(str_replace("'", '', $t['name'])));
                         $slug = trim($slug, '-');
                         
                         $existing = \App\Helpers\Database::queryOne("SELECT id FROM edit_suggestions WHERE slug = ?", [$slug]);
