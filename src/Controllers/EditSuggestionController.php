@@ -225,8 +225,20 @@ class EditSuggestionController
     public function updateRules(int $id, array $input): void
     {
         try {
-            $rules = ['categories' => $input['categories'] ?? [], 'keywords' => $input['keywords'] ?? [], 'colors' => $input['colors'] ?? [], 'exclude_categories' => $input['exclude_categories'] ?? []];
-            Database::execute("UPDATE edit_suggestions SET matching_rules = ?, auto_regenerate = ? WHERE id = ?", [json_encode($rules), $input['auto_regenerate'] ?? false, $id]);
+            $rules = [
+                'categories' => $input['categories'] ?? [], 
+                'keywords' => $input['keywords'] ?? [], 
+                'colors' => $input['colors'] ?? [], 
+                'exclude_categories' => $input['exclude_categories'] ?? []
+            ];
+            
+            // Cast to int - handles empty string, false, null, etc.
+            $autoRegenerate = !empty($input['auto_regenerate']) ? 1 : 0;
+            
+            Database::execute(
+                "UPDATE edit_suggestions SET matching_rules = ?, auto_regenerate = ? WHERE id = ?", 
+                [json_encode($rules), $autoRegenerate, $id]
+            );
             echo json_encode(['success' => true, 'message' => 'Rules updated']);
         } catch (\Exception $e) {
             http_response_code(500);
