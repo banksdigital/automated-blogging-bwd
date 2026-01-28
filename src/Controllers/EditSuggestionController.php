@@ -63,14 +63,42 @@ class EditSuggestionController
             $edit = Database::queryOne("SELECT * FROM edit_suggestions WHERE id = ?", [$id]);
             if (!$edit) {
                 http_response_code(404);
-                echo json_encode(['success' => false, 'error' => ['message' => 'Not found']]);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Edit not found']]);
                 return;
             }
-            $edit['matching_rules'] = json_decode($edit['matching_rules'] ?? '{}', true);
-            $edit['products'] = [];
-            $edit['stats'] = ['total' => 0, 'in_stock' => 0, 'out_of_stock' => 0, 'pending' => 0, 'approved' => 0, 'synced' => 0];
+            
+            $edit['matching_rules'] = json_decode($edit['matching_rules'] ?? '{}', true) ?: [];
+            
+            // Load products from edit_products joined with wp_products
+            $products = Database::query(
+                "SELECT ep.*, p.title, p.price, p.image_url, p.stock_status, p.brand_name, p.permalink
+                 FROM edit_products ep
+                 LEFT JOIN wp_products p ON ep.wc_product_id = p.wc_product_id
+                 WHERE ep.edit_suggestion_id = ?
+                 ORDER BY ep.status ASC, ep.match_score DESC",
+                [$id]
+            );
+            
+            // Parse match_reasons JSON
+            foreach ($products as &$product) {
+                $product['match_reasons'] = json_decode($product['match_reasons'] ?? '[]', true) ?: [];
+            }
+            
+            $edit['products'] = $products;
+            
+            // Calculate stats
+            $edit['stats'] = [
+                'total' => count($products),
+                'in_stock' => count(array_filter($products, fn($p) => ($p['stock_status'] ?? '') === 'instock')),
+                'out_of_stock' => count(array_filter($products, fn($p) => ($p['stock_status'] ?? '') !== 'instock')),
+                'pending' => count(array_filter($products, fn($p) => ($p['status'] ?? '') === 'pending')),
+                'approved' => count(array_filter($products, fn($p) => ($p['status'] ?? '') === 'approved')),
+                'synced' => count(array_filter($products, fn($p) => !empty($p['synced_to_wp'])))
+            ];
+            
             echo json_encode(['success' => true, 'data' => $edit]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            error_log("show edit error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
             http_response_code(500);
             echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
         }
@@ -131,11 +159,11 @@ class EditSuggestionController
             $edit = Database::queryOne("SELECT * FROM edit_suggestions WHERE id = ?", [$id]);
             if (!$edit) {
                 http_response_code(404);
-                echo json_encode(['success' => false, 'error' => ['message' => 'Not found']]);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Edit not found']]);
                 return;
             }
 
-            $rules = json_decode($edit['matching_rules'] ?? '{}', true);
+            $rules = json_decode($edit['matching_rules'] ?? '{}', true) ?: [];
             $products = $this->findMatchingProducts($rules, 100);
 
             echo json_encode([
@@ -146,7 +174,8 @@ class EditSuggestionController
                     'stats' => ['total' => count($products), 'in_stock' => count($products)]
                 ]
             ]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            error_log("previewProducts error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
             http_response_code(500);
             echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
         }
@@ -158,32 +187,43 @@ class EditSuggestionController
             $edit = Database::queryOne("SELECT * FROM edit_suggestions WHERE id = ?", [$id]);
             if (!$edit) {
                 http_response_code(404);
-                echo json_encode(['success' => false, 'error' => ['message' => 'Not found']]);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Edit not found']]);
                 return;
             }
 
-            $rules = json_decode($edit['matching_rules'] ?? '{}', true);
+            $rules = json_decode($edit['matching_rules'] ?? '{}', true) ?: [];
+            
+            if (empty($rules['categories']) && empty($rules['keywords']) && empty($rules['colors'])) {
+                echo json_encode(['success' => true, 'data' => ['added' => 0, 'total' => 0], 'message' => 'No matching rules defined']);
+                return;
+            }
+            
             $matched = $this->findMatchingProducts($rules, 100);
 
             $added = 0;
             foreach ($matched as $p) {
-                $existing = Database::queryOne(
-                    "SELECT id FROM edit_products WHERE edit_suggestion_id = ? AND wc_product_id = ?",
-                    [$id, $p['wc_product_id']]
-                );
-                if (!$existing) {
-                    Database::insert(
-                        "INSERT INTO edit_products (edit_suggestion_id, wc_product_id, match_score, match_reasons, status) VALUES (?, ?, ?, ?, 'pending')",
-                        [$id, $p['wc_product_id'], $p['match_score'], json_encode($p['match_reasons'])]
+                try {
+                    $existing = Database::queryOne(
+                        "SELECT id FROM edit_products WHERE edit_suggestion_id = ? AND wc_product_id = ?",
+                        [$id, $p['wc_product_id']]
                     );
-                    $added++;
+                    if (!$existing) {
+                        Database::insert(
+                            "INSERT INTO edit_products (edit_suggestion_id, wc_product_id, match_score, match_reasons, status) VALUES (?, ?, ?, ?, 'pending')",
+                            [$id, $p['wc_product_id'], $p['match_score'], json_encode($p['match_reasons'] ?? [])]
+                        );
+                        $added++;
+                    }
+                } catch (\Throwable $pe) {
+                    error_log("Error adding product {$p['wc_product_id']}: " . $pe->getMessage());
                 }
             }
 
             Database::execute("UPDATE edit_suggestions SET last_regenerated_at = NOW() WHERE id = ?", [$id]);
 
-            echo json_encode(['success' => true, 'data' => ['added' => $added, 'total' => count($matched)], 'message' => "Added {$added} products"]);
-        } catch (\Exception $e) {
+            echo json_encode(['success' => true, 'data' => ['added' => $added, 'total' => count($matched)]]);
+        } catch (\Throwable $e) {
+            error_log("regenerateProducts error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
             http_response_code(500);
             echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
         }
@@ -439,50 +479,83 @@ class EditSuggestionController
 
     private function findMatchingProducts(array $rules, int $limit): array
     {
-        $categories = $rules['categories'] ?? [];
-        $keywords = $rules['keywords'] ?? [];
-        $colors = $rules['colors'] ?? [];
+        try {
+            $categories = is_array($rules['categories'] ?? null) ? $rules['categories'] : [];
+            $keywords = is_array($rules['keywords'] ?? null) ? $rules['keywords'] : [];
+            $colors = is_array($rules['colors'] ?? null) ? $rules['colors'] : [];
+            $excludeCategories = is_array($rules['exclude_categories'] ?? null) ? $rules['exclude_categories'] : [];
 
-        $products = Database::query("SELECT wc_product_id, title, price, image_url, stock_status, brand_name, permalink, category_slugs, description FROM wp_products WHERE stock_status = 'instock' LIMIT 500");
+            $products = Database::query("SELECT wc_product_id, title, price, image_url, stock_status, brand_name, permalink, category_slugs, description FROM wp_products WHERE stock_status = 'instock' LIMIT 500");
 
-        $matched = [];
-        foreach ($products as $p) {
-            $score = 0;
-            $reasons = [];
-            $pCats = json_decode($p['category_slugs'] ?? '[]', true) ?: [];
-            $text = strtolower($p['title'] . ' ' . ($p['description'] ?? ''));
+            if (empty($products)) {
+                return [];
+            }
 
-            foreach ($categories as $c) {
-                foreach ($pCats as $pc) {
-                    if (stripos($pc, $c) !== false) {
-                        $score += 30;
-                        $reasons[] = "cat:{$c}";
-                        break;
+            $matched = [];
+            foreach ($products as $p) {
+                $score = 0;
+                $reasons = [];
+                
+                // Parse category slugs safely
+                $pCats = [];
+                if (!empty($p['category_slugs'])) {
+                    $decoded = json_decode($p['category_slugs'], true);
+                    $pCats = is_array($decoded) ? $decoded : [];
+                }
+                
+                // Check exclusions first
+                $excluded = false;
+                foreach ($excludeCategories as $exc) {
+                    if (empty($exc)) continue;
+                    foreach ($pCats as $pc) {
+                        if (stripos($pc, $exc) !== false) {
+                            $excluded = true;
+                            break 2;
+                        }
                     }
                 }
-            }
-            foreach ($keywords as $k) {
-                if (stripos($text, $k) !== false) {
-                    $score += 10;
-                    $reasons[] = "kw:{$k}";
+                if ($excluded) continue;
+                
+                $text = strtolower(($p['title'] ?? '') . ' ' . ($p['description'] ?? ''));
+
+                foreach ($categories as $c) {
+                    if (empty($c)) continue;
+                    foreach ($pCats as $pc) {
+                        if (stripos($pc, $c) !== false) {
+                            $score += 30;
+                            $reasons[] = "cat:{$c}";
+                            break;
+                        }
+                    }
                 }
-            }
-            foreach ($colors as $c) {
-                if (stripos($text, $c) !== false) {
-                    $score += 5;
-                    $reasons[] = "col:{$c}";
+                foreach ($keywords as $k) {
+                    if (empty($k)) continue;
+                    if (stripos($text, $k) !== false) {
+                        $score += 10;
+                        $reasons[] = "kw:{$k}";
+                    }
+                }
+                foreach ($colors as $c) {
+                    if (empty($c)) continue;
+                    if (stripos($text, $c) !== false) {
+                        $score += 5;
+                        $reasons[] = "col:{$c}";
+                    }
+                }
+
+                if ($score > 0) {
+                    $p['match_score'] = min(100, $score);
+                    $p['match_reasons'] = $reasons;
+                    $matched[] = $p;
                 }
             }
 
-            if ($score > 0) {
-                $p['match_score'] = min(100, $score);
-                $p['match_reasons'] = $reasons;
-                $matched[] = $p;
-            }
+            usort($matched, fn($a, $b) => ($b['match_score'] ?? 0) - ($a['match_score'] ?? 0));
+            return array_slice($matched, 0, $limit);
+        } catch (\Throwable $e) {
+            error_log("findMatchingProducts error: " . $e->getMessage());
+            return [];
         }
-
-        usort($matched, fn($a, $b) => $b['match_score'] - $a['match_score']);
-        return array_slice($matched, 0, $limit);
     }
 
     private function slugify(string $text): string
