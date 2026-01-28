@@ -3024,10 +3024,12 @@ const App = {
         try {
             this.toast('Regenerating products...', 'info');
             const result = await this.api(`/edit-suggestions/${id}/regenerate`, { method: 'POST' });
-            this.toast(result.message, 'success');
+            // result is data.data, build message from it
+            const msg = `Added ${result.added || 0} products, total ${result.total || 0}`;
+            this.toast(msg, 'success');
             this.openEditDetail(id);
         } catch (error) {
-            this.toast(error.message, 'error');
+            this.toast(error.message || 'Regenerate failed', 'error');
         }
     },
     
@@ -3076,23 +3078,38 @@ const App = {
         try {
             this.toast('Creating Edit in WordPress...', 'info');
             const result = await this.api(`/edit-suggestions/${id}/create-wp`, { method: 'POST' });
-            this.toast(result.message, 'success');
+            this.toast(result.wp_term_id ? 'Edit created in WordPress!' : 'Edit created', 'success');
             this.loadEditManager();
         } catch (error) {
-            this.toast(error.message, 'error');
+            this.toast(error.message || 'Failed to create in WordPress', 'error');
         }
     },
     
     async syncEditToWP(id) {
-        if (!confirm('Sync products to WordPress? This will assign/remove the Edit taxonomy from products.')) return;
+        if (!confirm('Sync products to WordPress? This will assign the Edit taxonomy to products.')) return;
         
         try {
             this.toast('Syncing to WordPress...', 'info');
             const result = await this.api(`/edit-suggestions/${id}/sync`, { method: 'POST' });
-            this.toast(result.message, 'success');
+            
+            // Build message from result data
+            let msg = `Synced ${result.added || 0} of ${result.total || 0} products`;
+            if (result.failed > 0) {
+                msg += ` (${result.failed} failed)`;
+            }
+            
+            // Show errors if any
+            if (result.errors && result.errors.length > 0) {
+                console.error('Sync errors:', result.errors);
+                this.toast(msg + '. Check console for details.', result.added > 0 ? 'success' : 'error');
+            } else {
+                this.toast(msg, 'success');
+            }
+            
             this.openEditDetail(id);
         } catch (error) {
-            this.toast(error.message, 'error');
+            console.error('Sync error:', error);
+            this.toast(error.message || 'Sync failed - check console for details', 'error');
         }
     },
 

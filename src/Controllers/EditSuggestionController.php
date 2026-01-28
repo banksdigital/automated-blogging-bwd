@@ -282,31 +282,76 @@ class EditSuggestionController
             $edit = Database::queryOne("SELECT * FROM edit_suggestions WHERE id = ?", [$id]);
             if (!$edit || !$edit['wp_term_id']) {
                 http_response_code(400);
-                echo json_encode(['success' => false, 'error' => ['message' => 'Not created in WP yet']]);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Edit not created in WordPress yet. Click "Create in WP" first.']]);
                 return;
             }
 
             $service = new WordPressService($this->config);
-            $toAdd = Database::query("SELECT * FROM edit_products WHERE edit_suggestion_id = ? AND status = 'approved' AND synced_to_wp = 0", [$id]);
+            
+            // Get products to sync - both 'approved' AND 'pending' (auto-approve pending on sync)
+            $toAdd = Database::query(
+                "SELECT * FROM edit_products WHERE edit_suggestion_id = ? AND status IN ('approved', 'pending') AND synced_to_wp = 0", 
+                [$id]
+            );
+            
+            if (empty($toAdd)) {
+                echo json_encode([
+                    'success' => true, 
+                    'data' => ['added' => 0, 'total' => 0],
+                    'message' => 'No products to sync'
+                ]);
+                return;
+            }
 
             $added = 0;
+            $failed = 0;
+            $errorMessages = [];
+            
             foreach ($toAdd as $p) {
                 try {
-                    if ($service->assignProductToEdit($p['wc_product_id'], $edit['wp_term_id'])) {
-                        Database::execute("UPDATE edit_products SET synced_to_wp = 1, status = 'synced' WHERE id = ?", [$p['id']]);
+                    $result = $service->assignProductToEdit($p['wc_product_id'], $edit['wp_term_id']);
+                    if ($result) {
+                        Database::execute(
+                            "UPDATE edit_products SET synced_to_wp = 1, status = 'synced', synced_at = NOW() WHERE id = ?", 
+                            [$p['id']]
+                        );
                         $added++;
+                    } else {
+                        $failed++;
+                        $errorMessages[] = "Product {$p['wc_product_id']}: Unknown error";
                     }
-                } catch (\Exception $e) {
-                    // skip
+                } catch (\Throwable $e) {
+                    $failed++;
+                    $errorMessages[] = "Product {$p['wc_product_id']}: " . $e->getMessage();
+                    error_log("Sync product {$p['wc_product_id']} to edit {$edit['wp_term_id']} failed: " . $e->getMessage());
                 }
             }
 
             if ($added > 0) {
-                Database::execute("UPDATE edit_suggestions SET status = 'active' WHERE id = ?", [$id]);
+                Database::execute("UPDATE edit_suggestions SET status = 'active', wp_synced_at = NOW() WHERE id = ?", [$id]);
             }
 
-            echo json_encode(['success' => true, 'message' => "Synced {$added} products"]);
-        } catch (\Exception $e) {
+            $response = [
+                'success' => true, 
+                'data' => [
+                    'added' => $added, 
+                    'failed' => $failed,
+                    'total' => count($toAdd)
+                ]
+            ];
+            
+            if (!empty($errorMessages)) {
+                $response['data']['errors'] = array_slice($errorMessages, 0, 5); // First 5 errors
+            }
+            
+            echo json_encode($response);
+            
+        } catch (\Throwable $e) {
+            error_log("syncToWordPress error: " . $e->getMessage() . " in " . $e->getFile() . ":" . $e->getLine());
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => ['message' => 'Sync failed: ' . $e->getMessage()]]);
+        }
+    }
             http_response_code(500);
             echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
         }

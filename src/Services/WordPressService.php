@@ -975,32 +975,37 @@ public function getProductBrand(int $productId): ?array
     public function assignProductToEdit(int $productId, int $editTermId): bool
     {
         try {
-            // First get current edit terms for this product
-            $product = $this->wcRequest('GET', "/wc/v3/products/{$productId}");
-            
-            // WooCommerce stores custom taxonomies in different ways
-            // For ACF-created taxonomies, we need to use the WordPress REST API
-            $currentEdits = [];
-            
-            // Try to get current edits from the product
-            if (isset($product['edit']) && is_array($product['edit'])) {
-                $currentEdits = $product['edit'];
-            }
-            
-            // Add the new edit term if not already present
-            if (!in_array($editTermId, $currentEdits)) {
-                $currentEdits[] = $editTermId;
-            }
-            
-            // Update product with edit taxonomy via WP REST API
+            // Method 1: Try direct term assignment via WP REST API terms endpoint
+            // This works if the taxonomy is properly registered with show_in_rest
             $endpoint = "/wp/v2/product/{$productId}";
-            $data = ['edit' => $currentEdits];
+            
+            // Get current product to see its edit terms
+            $currentProduct = $this->wpRequest('GET', $endpoint . '?_fields=id,edit');
+            $currentEdits = $currentProduct['edit'] ?? [];
+            
+            error_log("assignProductToEdit: Product {$productId}, current edits: " . json_encode($currentEdits));
+            
+            // Add new term if not present
+            if (!in_array($editTermId, $currentEdits)) {
+                $currentEdits[] = (int)$editTermId;
+            }
+            
+            // Update product with edit taxonomy
+            $data = ['edit' => array_values(array_unique($currentEdits))];
+            error_log("assignProductToEdit: Sending update with edits: " . json_encode($data));
             
             $result = $this->wpRequest('POST', $endpoint, $data);
             
-            return isset($result['id']);
+            $success = isset($result['id']);
+            error_log("assignProductToEdit: Result - " . ($success ? "SUCCESS" : "FAILED") . ", response: " . json_encode(array_slice($result, 0, 5)));
+            
+            return $success;
         } catch (\Exception $e) {
-            error_log("Failed to assign product {$productId} to edit {$editTermId}: " . $e->getMessage());
+            error_log("assignProductToEdit EXCEPTION for product {$productId} to edit {$editTermId}: " . $e->getMessage());
+            
+            // Method 2: Try using wp_set_object_terms via custom endpoint (if available)
+            // This would require a custom WordPress plugin endpoint
+            
             throw $e;
         }
     }
