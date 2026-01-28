@@ -328,14 +328,111 @@ function routeApi(string $path, string $method, array $config): void
             break;
             
         // Edit Suggestions & Management
+        case $path === '/edit-suggestions/test' && $method === 'GET':
+            // Debug endpoint - test if routing works
+            echo json_encode(['success' => true, 'data' => 'Edit suggestions route works']);
+            break;
         case $path === '/edit-suggestions' && $method === 'GET':
-            (new \App\Controllers\EditSuggestionController($config))->index();
+            // Inline test - bypass controller to check if issue is in controller
+            try {
+                $tableCheck = \App\Core\Database::query(
+                    "SELECT COUNT(*) as cnt FROM information_schema.tables 
+                     WHERE table_schema = DATABASE() 
+                     AND table_name = 'edit_suggestions'"
+                );
+                $tableExists = (int)($tableCheck[0]['cnt'] ?? 0) > 0;
+                
+                if (!$tableExists) {
+                    echo json_encode([
+                        'success' => true,
+                        'data' => [],
+                        'message' => 'Table edit_suggestions does not exist. Run the SQL migration.'
+                    ]);
+                } else {
+                    $edits = \App\Core\Database::query("SELECT * FROM edit_suggestions ORDER BY name ASC");
+                    foreach ($edits as &$edit) {
+                        $edit['matching_rules'] = json_decode($edit['matching_rules'] ?? '{}', true);
+                        $edit['total_products'] = 0;
+                        $edit['in_stock_products'] = 0;
+                        $edit['pending_products'] = 0;
+                        $edit['synced_products'] = 0;
+                    }
+                    echo json_encode(['success' => true, 'data' => $edits]);
+                }
+            } catch (\Exception $e) {
+                http_response_code(500);
+                echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+            }
             break;
         case $path === '/edit-suggestions' && $method === 'POST':
-            (new \App\Controllers\EditSuggestionController($config))->create($input);
+            // Inline create
+            try {
+                $name = $input['name'] ?? '';
+                if (!$name) {
+                    http_response_code(400);
+                    echo json_encode(['success' => false, 'error' => ['message' => 'Name required']]);
+                    break;
+                }
+                $slug = strtolower(preg_replace('/[^a-z0-9]+/', '-', $name));
+                $rules = ['categories' => $input['categories'] ?? [], 'keywords' => $input['keywords'] ?? [], 'colors' => $input['colors'] ?? []];
+                $id = \App\Core\Database::insert(
+                    "INSERT INTO edit_suggestions (name, slug, description, source_type, matching_rules, status) VALUES (?, ?, ?, 'manual', ?, 'suggested')",
+                    [$name, $slug, $input['description'] ?? '', json_encode($rules)]
+                );
+                echo json_encode(['success' => true, 'data' => ['id' => $id]]);
+            } catch (\Exception $e) {
+                http_response_code(500);
+                echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+            }
             break;
         case $path === '/edit-suggestions/generate' && $method === 'POST':
-            (new \App\Controllers\EditSuggestionController($config))->generateSuggestions();
+            // Inline generate suggestions
+            try {
+                $tableCheck = \App\Core\Database::query(
+                    "SELECT COUNT(*) as cnt FROM information_schema.tables 
+                     WHERE table_schema = DATABASE() AND table_name = 'edit_suggestions'"
+                );
+                if ((int)($tableCheck[0]['cnt'] ?? 0) === 0) {
+                    http_response_code(400);
+                    echo json_encode(['success' => false, 'error' => ['message' => 'Run SQL migration first']]);
+                    break;
+                }
+                
+                $templates = [
+                    ['name' => "Valentine's Day Gifting", 'type' => 'occasion', 'desc' => 'Valentine gifts', 'rules' => ['categories' => ['dresses', 'accessories'], 'keywords' => ['gift', 'romantic'], 'colors' => ['red', 'pink']]],
+                    ['name' => "Mother's Day Gifts", 'type' => 'occasion', 'desc' => 'Gifts for mum', 'rules' => ['categories' => ['accessories', 'jewellery'], 'keywords' => ['gift', 'elegant'], 'colors' => []]],
+                    ['name' => 'Wedding Guest', 'type' => 'occasion', 'desc' => 'Wedding guest outfits', 'rules' => ['categories' => ['dresses', 'jumpsuits'], 'keywords' => ['wedding', 'occasion'], 'colors' => []]],
+                    ['name' => 'Holiday Packing', 'type' => 'occasion', 'desc' => 'Holiday essentials', 'rules' => ['categories' => ['dresses', 'swimwear'], 'keywords' => ['holiday', 'summer'], 'colors' => []]],
+                    ['name' => 'Party Season', 'type' => 'seasonal', 'desc' => 'Party pieces', 'rules' => ['categories' => ['dresses', 'tops'], 'keywords' => ['party', 'evening'], 'colors' => ['black', 'gold']]],
+                    ['name' => 'Spring Edit', 'type' => 'seasonal', 'desc' => 'Spring styles', 'rules' => ['categories' => ['dresses', 'blouses'], 'keywords' => ['spring', 'floral'], 'colors' => []]],
+                    ['name' => 'Summer Edit', 'type' => 'seasonal', 'desc' => 'Summer styles', 'rules' => ['categories' => ['dresses', 'shorts'], 'keywords' => ['summer', 'linen'], 'colors' => []]],
+                    ['name' => 'Autumn Edit', 'type' => 'seasonal', 'desc' => 'Autumn layers', 'rules' => ['categories' => ['knitwear', 'coats'], 'keywords' => ['autumn', 'cosy'], 'colors' => []]],
+                    ['name' => 'Winter Edit', 'type' => 'seasonal', 'desc' => 'Winter warmers', 'rules' => ['categories' => ['coats', 'knitwear'], 'keywords' => ['winter', 'warm'], 'colors' => []]],
+                    ['name' => 'The Denim Edit', 'type' => 'category', 'desc' => 'Premium denim', 'rules' => ['categories' => ['jeans'], 'keywords' => ['denim', 'jeans'], 'colors' => []]],
+                    ['name' => 'Workwear Edit', 'type' => 'occasion', 'desc' => 'Office styles', 'rules' => ['categories' => ['blazers', 'trousers'], 'keywords' => ['work', 'office'], 'colors' => []]],
+                    ['name' => 'Date Night', 'type' => 'occasion', 'desc' => 'Evening styles', 'rules' => ['categories' => ['dresses', 'heels'], 'keywords' => ['date', 'evening'], 'colors' => []]],
+                ];
+                
+                $created = 0;
+                $skipped = 0;
+                foreach ($templates as $t) {
+                    $slug = strtolower(preg_replace('/[^a-z0-9]+/', '-', str_replace("'", '', $t['name'])));
+                    $existing = \App\Core\Database::queryOne("SELECT id FROM edit_suggestions WHERE slug = ?", [$slug]);
+                    if ($existing) {
+                        $skipped++;
+                        continue;
+                    }
+                    \App\Core\Database::insert(
+                        "INSERT INTO edit_suggestions (name, slug, description, source_type, matching_rules, status) VALUES (?, ?, ?, ?, ?, 'suggested')",
+                        [$t['name'], $slug, $t['desc'], $t['type'], json_encode($t['rules'])]
+                    );
+                    $created++;
+                }
+                echo json_encode(['success' => true, 'data' => ['created' => $created, 'skipped' => $skipped], 'message' => "Created {$created}, skipped {$skipped}"]);
+            } catch (\Exception $e) {
+                http_response_code(500);
+                echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+            }
             break;
         case $path === '/edit-suggestions/categories' && $method === 'GET':
             (new \App\Controllers\EditSuggestionController($config))->getCategories();
