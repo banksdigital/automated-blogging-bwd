@@ -327,6 +327,53 @@ function routeApi(string $path, string $method, array $config): void
             (new \App\Controllers\TaxonomySeoController($config))->pullEditFromWordPress((int)$m[1]);
             break;
             
+        // Edit Suggestions & Management
+        case $path === '/edit-suggestions' && $method === 'GET':
+            (new \App\Controllers\EditSuggestionController($config))->index();
+            break;
+        case $path === '/edit-suggestions' && $method === 'POST':
+            (new \App\Controllers\EditSuggestionController($config))->create($input);
+            break;
+        case $path === '/edit-suggestions/generate' && $method === 'POST':
+            (new \App\Controllers\EditSuggestionController($config))->generateSuggestions();
+            break;
+        case $path === '/edit-suggestions/categories' && $method === 'GET':
+            (new \App\Controllers\EditSuggestionController($config))->getCategories();
+            break;
+        case $path === '/edit-suggestions/search-products' && $method === 'POST':
+            (new \App\Controllers\EditSuggestionController($config))->searchProducts($input);
+            break;
+        case preg_match('#^/edit-suggestions/(\d+)$#', $path, $m) && $method === 'GET':
+            (new \App\Controllers\EditSuggestionController($config))->show((int)$m[1]);
+            break;
+        case preg_match('#^/edit-suggestions/(\d+)$#', $path, $m) && $method === 'DELETE':
+            (new \App\Controllers\EditSuggestionController($config))->delete((int)$m[1]);
+            break;
+        case preg_match('#^/edit-suggestions/(\d+)/rules$#', $path, $m) && $method === 'PUT':
+            (new \App\Controllers\EditSuggestionController($config))->updateRules((int)$m[1], $input);
+            break;
+        case preg_match('#^/edit-suggestions/(\d+)/preview$#', $path, $m) && $method === 'GET':
+            (new \App\Controllers\EditSuggestionController($config))->previewProducts((int)$m[1]);
+            break;
+        case preg_match('#^/edit-suggestions/(\d+)/regenerate$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\EditSuggestionController($config))->regenerateProducts((int)$m[1]);
+            break;
+        case preg_match('#^/edit-suggestions/(\d+)/approve$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\EditSuggestionController($config))->approveProducts((int)$m[1], $input);
+            break;
+        case preg_match('#^/edit-suggestions/(\d+)/reject$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\EditSuggestionController($config))->rejectProducts((int)$m[1], $input);
+            break;
+        case preg_match('#^/edit-suggestions/(\d+)/add-product$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\EditSuggestionController($config))->addProduct((int)$m[1], $input);
+            break;
+        case preg_match('#^/edit-suggestions/(\d+)/create-wp$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\EditSuggestionController($config))->createInWordPress((int)$m[1]);
+            break;
+        case preg_match('#^/edit-suggestions/(\d+)/sync$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\EditSuggestionController($config))->syncToWordPress((int)$m[1]);
+            break;
+            
         // Roadmap
         case $path === '/roadmap' && $method === 'GET':
             (new \App\Controllers\RoadmapController($config))->index($_GET);
@@ -546,6 +593,7 @@ function routeWeb(string $path, string $method, array $config): void
         case '/roadmap':
         case '/calendar-events':
         case '/taxonomy-seo':
+        case '/edit-manager':
         case '/brainstorm':
         case '/products':
         case '/autopilot':

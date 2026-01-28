@@ -900,4 +900,151 @@ public function getProductBrand(int $productId): ?array
             throw $e;
         }
     }
+
+    /**
+     * Create a new Edit term in WordPress
+     */
+    public function createEditTerm(string $name, string $slug): ?int
+    {
+        try {
+            $endpoint = "/wp/v2/edit";
+            
+            $data = [
+                'name' => $name,
+                'slug' => $slug
+            ];
+            
+            $result = $this->wpRequest('POST', $endpoint, $data);
+            
+            if (isset($result['id'])) {
+                error_log("Created Edit term '{$name}' with ID {$result['id']}");
+                return $result['id'];
+            }
+            
+            return null;
+        } catch (\Exception $e) {
+            // Check if term already exists
+            if (strpos($e->getMessage(), 'term_exists') !== false) {
+                // Try to get existing term
+                $existing = $this->getEditTermBySlug($slug);
+                if ($existing) {
+                    return $existing['id'];
+                }
+            }
+            error_log("Failed to create Edit term '{$name}': " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Get Edit term by slug
+     */
+    public function getEditTermBySlug(string $slug): ?array
+    {
+        try {
+            $url = $this->baseUrl . "/wp/v2/edit?slug=" . urlencode($slug);
+            
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Basic ' . base64_encode($this->wpUsername . ':' . $this->wpPassword)
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            if ($httpCode === 200) {
+                $terms = json_decode($response, true);
+                if (!empty($terms) && isset($terms[0])) {
+                    return $terms[0];
+                }
+            }
+            
+            return null;
+        } catch (\Exception $e) {
+            error_log("Failed to get Edit term by slug '{$slug}': " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Assign a product to an Edit taxonomy
+     */
+    public function assignProductToEdit(int $productId, int $editTermId): bool
+    {
+        try {
+            // First get current edit terms for this product
+            $product = $this->wcRequest('GET', "/wc/v3/products/{$productId}");
+            
+            // WooCommerce stores custom taxonomies in different ways
+            // For ACF-created taxonomies, we need to use the WordPress REST API
+            $currentEdits = [];
+            
+            // Try to get current edits from the product
+            if (isset($product['edit']) && is_array($product['edit'])) {
+                $currentEdits = $product['edit'];
+            }
+            
+            // Add the new edit term if not already present
+            if (!in_array($editTermId, $currentEdits)) {
+                $currentEdits[] = $editTermId;
+            }
+            
+            // Update product with edit taxonomy via WP REST API
+            $endpoint = "/wp/v2/product/{$productId}";
+            $data = ['edit' => $currentEdits];
+            
+            $result = $this->wpRequest('POST', $endpoint, $data);
+            
+            return isset($result['id']);
+        } catch (\Exception $e) {
+            error_log("Failed to assign product {$productId} to edit {$editTermId}: " . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    /**
+     * Remove a product from an Edit taxonomy
+     */
+    public function removeProductFromEdit(int $productId, int $editTermId): bool
+    {
+        try {
+            // Get current edit terms for this product
+            $url = $this->baseUrl . "/wp/v2/product/{$productId}?_fields=id,edit";
+            
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Basic ' . base64_encode($this->wpUsername . ':' . $this->wpPassword)
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            if ($httpCode !== 200) {
+                throw new \Exception("Failed to get product: HTTP {$httpCode}");
+            }
+            
+            $product = json_decode($response, true);
+            $currentEdits = $product['edit'] ?? [];
+            
+            // Remove the edit term
+            $currentEdits = array_values(array_diff($currentEdits, [$editTermId]));
+            
+            // Update product
+            $endpoint = "/wp/v2/product/{$productId}";
+            $data = ['edit' => $currentEdits];
+            
+            $result = $this->wpRequest('POST', $endpoint, $data);
+            
+            return isset($result['id']);
+        } catch (\Exception $e) {
+            error_log("Failed to remove product {$productId} from edit {$editTermId}: " . $e->getMessage());
+            throw $e;
+        }
+    }
 }

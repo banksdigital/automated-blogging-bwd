@@ -118,6 +118,8 @@ const App = {
             this.loadCalendarEvents();
         } else if (path === '/taxonomy-seo') {
             this.loadTaxonomySeo();
+        } else if (path === '/edit-manager') {
+            this.loadEditManager();
         } else if (path === '/brainstorm') {
             this.loadBrainstorm();
         } else if (path === '/products') {
@@ -158,7 +160,8 @@ const App = {
                         <h1 class="page-title">Content Dashboard</h1>
                         <p class="page-subtitle">${new Date().toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
                     </div>
-                    <div style="display:flex;gap:8px;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button class="btn btn-secondary" onclick="App.navigate('/edit-manager')">✨ Edit Manager</button>
                         <button class="btn btn-secondary" onclick="App.navigate('/taxonomy-seo')">🔍 Taxonomy SEO</button>
                         <button class="btn btn-secondary" onclick="App.navigate('/calendar-events')">📅 Calendar Events</button>
                         <button class="btn btn-secondary" onclick="App.navigate('/autopilot')">⚙ Auto-Pilot</button>
@@ -2528,6 +2531,566 @@ const App = {
         } catch (error) {
             results.textContent += '\n\nError: ' + error.message + '\n\nCheck the browser console for more details.';
             console.error('testTaxonomyApi error:', error);
+        }
+    },
+
+    // ==================== EDIT MANAGER ====================
+    
+    editManagerState: {
+        currentEditId: null,
+        previewProducts: []
+    },
+    
+    async loadEditManager() {
+        const main = document.getElementById('main-content');
+        main.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+        
+        try {
+            const edits = await this.api('/edit-suggestions');
+            
+            const suggested = edits.filter(e => e.status === 'suggested');
+            const approved = edits.filter(e => e.status === 'approved');
+            const active = edits.filter(e => e.status === 'active' || e.status === 'created');
+            
+            main.innerHTML = `
+                <div class="page-header">
+                    <div>
+                        <h1 class="page-title">Edit Manager</h1>
+                        <p class="page-subtitle">Create and manage curated product collections for SEO</p>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-secondary" onclick="App.generateEditSuggestions()">🔄 Generate Suggestions</button>
+                        <button class="btn btn-primary" onclick="App.showCreateEditModal()">+ New Edit</button>
+                    </div>
+                </div>
+                
+                <!-- Stats -->
+                <div class="stats-grid" style="margin-bottom:24px;">
+                    <div class="stat-card">
+                        <div class="stat-label">Suggested</div>
+                        <div class="stat-value" style="color:var(--text-muted);">${suggested.length}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Approved</div>
+                        <div class="stat-value" style="color:var(--status-review);">${approved.length}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Active in WP</div>
+                        <div class="stat-value" style="color:var(--status-published);">${active.length}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Total Products</div>
+                        <div class="stat-value">${edits.reduce((sum, e) => sum + (e.in_stock_products || 0), 0)}</div>
+                    </div>
+                </div>
+                
+                <!-- Active Edits -->
+                ${active.length > 0 ? `
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">🟢 Active Edits (${active.length})</span>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        ${this.renderEditTable(active, 'active')}
+                    </div>
+                </div>
+                ` : ''}
+                
+                <!-- Approved Edits -->
+                ${approved.length > 0 ? `
+                <div class="card" style="margin-bottom:24px;">
+                    <div class="card-header">
+                        <span class="card-title">🟡 Approved - Ready to Create (${approved.length})</span>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        ${this.renderEditTable(approved, 'approved')}
+                    </div>
+                </div>
+                ` : ''}
+                
+                <!-- Suggested Edits -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">💡 Suggested Edits (${suggested.length})</span>
+                        <span style="font-size:12px;color:var(--text-secondary);">Review and approve to activate</span>
+                    </div>
+                    <div class="card-body" style="padding:0;">
+                        ${suggested.length > 0 ? this.renderEditTable(suggested, 'suggested') : `
+                            <div style="padding:40px;text-align:center;color:var(--text-muted);">
+                                <p>No edit suggestions yet.</p>
+                                <button class="btn btn-secondary" onclick="App.generateEditSuggestions()" style="margin-top:12px;">🔄 Generate Suggestions</button>
+                            </div>
+                        `}
+                    </div>
+                </div>
+                
+                <!-- Edit Detail Modal -->
+                <div id="edit-detail-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:20px;">
+                    <div style="background:var(--bg-card);border-radius:8px;width:100%;max-width:1200px;margin:20px auto;max-height:calc(100vh - 40px);display:flex;flex-direction:column;">
+                        <div id="edit-detail-content" style="flex:1;overflow-y:auto;"></div>
+                    </div>
+                </div>
+                
+                <!-- Create Edit Modal -->
+                <div id="create-edit-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;display:none;align-items:center;justify-content:center;">
+                    <div style="background:var(--bg-card);padding:32px;border-radius:8px;width:100%;max-width:600px;">
+                        <h2 style="margin-bottom:24px;">Create New Edit</h2>
+                        <div class="form-group">
+                            <label class="form-label">Edit Name</label>
+                            <input type="text" id="new-edit-name" class="form-input" placeholder="e.g. Valentine's Day Gifting">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Description</label>
+                            <textarea id="new-edit-description" class="form-input form-textarea" rows="2" placeholder="Brief description of this edit"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Categories (comma-separated)</label>
+                            <input type="text" id="new-edit-categories" class="form-input" placeholder="dresses, accessories, jewellery">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Keywords (comma-separated)</label>
+                            <input type="text" id="new-edit-keywords" class="form-input" placeholder="gift, romantic, elegant">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Colors (comma-separated, optional)</label>
+                            <input type="text" id="new-edit-colors" class="form-input" placeholder="red, pink, burgundy">
+                        </div>
+                        <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:24px;">
+                            <button class="btn btn-secondary" onclick="document.getElementById('create-edit-modal').style.display='none'">Cancel</button>
+                            <button class="btn btn-primary" onclick="App.createNewEdit()">Create Edit</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            main.innerHTML = `<div class="empty-state"><div class="empty-state-title">Error</div><p>${error.message}</p></div>`;
+        }
+    },
+    
+    renderEditTable(edits, type) {
+        return `
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="border-bottom:1px solid var(--border-default);">
+                        <th style="text-align:left;padding:12px 16px;font-size:12px;color:var(--text-secondary);">Edit</th>
+                        <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Products</th>
+                        <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">In Stock</th>
+                        <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Pending</th>
+                        ${type === 'active' ? '<th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Synced</th>' : ''}
+                        <th style="text-align:right;padding:12px 16px;font-size:12px;color:var(--text-secondary);">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${edits.map(edit => `
+                        <tr style="border-bottom:1px solid var(--border-default);">
+                            <td style="padding:12px 16px;">
+                                <div style="font-weight:500;">${this.escapeHtml(edit.name)}</div>
+                                <div style="font-size:12px;color:var(--text-secondary);">
+                                    ${edit.source_type === 'calendar' ? '📅 Calendar' : 
+                                      edit.source_type === 'seasonal' ? '🌿 Seasonal' :
+                                      edit.source_type === 'occasion' ? '🎉 Occasion' :
+                                      edit.source_type === 'category' ? '📁 Category' : '✏️ Custom'}
+                                    ${edit.auto_regenerate ? ' • 🔄 Auto' : ''}
+                                </div>
+                            </td>
+                            <td style="padding:12px 8px;text-align:center;">
+                                <span style="font-weight:500;">${edit.total_products || 0}</span>
+                            </td>
+                            <td style="padding:12px 8px;text-align:center;">
+                                <span style="color:${(edit.in_stock_products || 0) > 0 ? 'var(--status-published)' : 'var(--text-muted)'};">
+                                    ${edit.in_stock_products || 0}
+                                </span>
+                            </td>
+                            <td style="padding:12px 8px;text-align:center;">
+                                ${(edit.pending_products || 0) > 0 
+                                    ? `<span style="background:var(--status-review);color:white;padding:2px 8px;border-radius:10px;font-size:11px;">${edit.pending_products}</span>`
+                                    : '<span style="color:var(--text-muted);">—</span>'}
+                            </td>
+                            ${type === 'active' ? `
+                                <td style="padding:12px 8px;text-align:center;">
+                                    <span style="color:var(--status-published);">${edit.synced_products || 0}</span>
+                                </td>
+                            ` : ''}
+                            <td style="padding:12px 16px;text-align:right;">
+                                <button class="btn btn-sm btn-secondary" onclick="App.openEditDetail(${edit.id})" style="margin-right:4px;">View</button>
+                                ${type === 'suggested' ? `
+                                    <button class="btn btn-sm btn-primary" onclick="App.previewAndApproveEdit(${edit.id})">Preview Products</button>
+                                ` : type === 'approved' ? `
+                                    <button class="btn btn-sm" style="background:var(--status-published);color:white;" onclick="App.createEditInWP(${edit.id})">Create in WP</button>
+                                ` : `
+                                    <button class="btn btn-sm btn-secondary" onclick="App.regenerateEditProducts(${edit.id})" style="margin-right:4px;">🔄 Regenerate</button>
+                                    <button class="btn btn-sm" style="background:var(--status-published);color:white;" onclick="App.syncEditToWP(${edit.id})">Sync to WP</button>
+                                `}
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    },
+    
+    async generateEditSuggestions() {
+        try {
+            this.toast('Generating edit suggestions...', 'info');
+            const result = await this.api('/edit-suggestions/generate', { method: 'POST' });
+            this.toast(result.message, 'success');
+            this.loadEditManager();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    showCreateEditModal() {
+        document.getElementById('create-edit-modal').style.display = 'flex';
+    },
+    
+    async createNewEdit() {
+        const name = document.getElementById('new-edit-name').value.trim();
+        const description = document.getElementById('new-edit-description').value.trim();
+        const categories = document.getElementById('new-edit-categories').value.split(',').map(s => s.trim()).filter(s => s);
+        const keywords = document.getElementById('new-edit-keywords').value.split(',').map(s => s.trim()).filter(s => s);
+        const colors = document.getElementById('new-edit-colors').value.split(',').map(s => s.trim()).filter(s => s);
+        
+        if (!name) {
+            this.toast('Name is required', 'error');
+            return;
+        }
+        
+        try {
+            await this.api('/edit-suggestions', {
+                method: 'POST',
+                body: { name, description, categories, keywords, colors }
+            });
+            this.toast('Edit created!', 'success');
+            document.getElementById('create-edit-modal').style.display = 'none';
+            this.loadEditManager();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async openEditDetail(id) {
+        const modal = document.getElementById('edit-detail-modal');
+        const content = document.getElementById('edit-detail-content');
+        modal.style.display = 'block';
+        content.innerHTML = '<div class="loading" style="padding:40px;"><div class="spinner"></div></div>';
+        
+        try {
+            const edit = await this.api(`/edit-suggestions/${id}`);
+            this.editManagerState.currentEditId = id;
+            
+            const rules = edit.matching_rules || {};
+            
+            content.innerHTML = `
+                <div style="padding:24px;border-bottom:1px solid var(--border-default);display:flex;justify-content:space-between;align-items:start;">
+                    <div>
+                        <h2 style="margin-bottom:8px;">${this.escapeHtml(edit.name)}</h2>
+                        <p style="color:var(--text-secondary);margin-bottom:12px;">${this.escapeHtml(edit.description || '')}</p>
+                        <div style="display:flex;gap:16px;font-size:13px;">
+                            <span><strong>Status:</strong> ${edit.status}</span>
+                            <span><strong>Products:</strong> ${edit.stats.total}</span>
+                            <span style="color:var(--status-published);"><strong>In Stock:</strong> ${edit.stats.in_stock}</span>
+                            <span style="color:var(--text-muted);"><strong>Out of Stock:</strong> ${edit.stats.out_of_stock}</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="document.getElementById('edit-detail-modal').style.display='none'">✕ Close</button>
+                </div>
+                
+                <div style="display:grid;grid-template-columns:300px 1fr;height:calc(100vh - 200px);">
+                    <!-- Rules Panel -->
+                    <div style="border-right:1px solid var(--border-default);padding:20px;overflow-y:auto;">
+                        <h3 style="margin-bottom:16px;">Matching Rules</h3>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Categories</label>
+                            <textarea id="edit-rule-categories" class="form-input form-textarea" rows="3" placeholder="One per line">${(rules.categories || []).join('\n')}</textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Keywords</label>
+                            <textarea id="edit-rule-keywords" class="form-input form-textarea" rows="3" placeholder="One per line">${(rules.keywords || []).join('\n')}</textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Colors</label>
+                            <textarea id="edit-rule-colors" class="form-input form-textarea" rows="2" placeholder="One per line">${(rules.colors || []).join('\n')}</textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Exclude Categories</label>
+                            <textarea id="edit-rule-exclude" class="form-input form-textarea" rows="2" placeholder="One per line">${(rules.exclude_categories || []).join('\n')}</textarea>
+                        </div>
+                        
+                        <div style="display:flex;gap:8px;margin-top:16px;">
+                            <button class="btn btn-secondary" onclick="App.saveEditRules(${id})" style="flex:1;">Save Rules</button>
+                            <button class="btn btn-primary" onclick="App.previewEditProducts(${id})" style="flex:1;">Preview</button>
+                        </div>
+                        
+                        <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border-default);">
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                <input type="checkbox" id="edit-auto-regenerate" ${edit.auto_regenerate ? 'checked' : ''}>
+                                <span>Auto-regenerate monthly</span>
+                            </label>
+                        </div>
+                        
+                        <div style="margin-top:20px;">
+                            <button class="btn btn-secondary" onclick="App.regenerateEditProducts(${id})" style="width:100%;">🔄 Regenerate Products Now</button>
+                        </div>
+                        
+                        ${edit.wp_term_id ? `
+                            <div style="margin-top:12px;">
+                                <button class="btn" style="width:100%;background:var(--status-published);color:white;" onclick="App.syncEditToWP(${id})">⬆️ Sync to WordPress</button>
+                            </div>
+                        ` : edit.status === 'approved' || edit.status === 'suggested' ? `
+                            <div style="margin-top:12px;">
+                                <button class="btn btn-primary" style="width:100%;" onclick="App.createEditInWP(${id})">Create in WordPress</button>
+                            </div>
+                        ` : ''}
+                    </div>
+                    
+                    <!-- Products Panel -->
+                    <div style="padding:20px;overflow-y:auto;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                            <h3>Products (${edit.products.length})</h3>
+                            <div style="display:flex;gap:8px;">
+                                <button class="btn btn-sm btn-secondary" onclick="App.approveAllEditProducts(${id})">✓ Approve All Pending</button>
+                            </div>
+                        </div>
+                        
+                        ${edit.products.length > 0 ? `
+                            <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));gap:16px;">
+                                ${edit.products.map(p => `
+                                    <div style="border:1px solid var(--border-default);border-radius:8px;overflow:hidden;position:relative;">
+                                        ${p.status === 'pending' ? '<div style="position:absolute;top:8px;left:8px;background:var(--status-review);color:white;padding:2px 8px;border-radius:4px;font-size:10px;">PENDING</div>' : ''}
+                                        ${p.synced_to_wp ? '<div style="position:absolute;top:8px;right:8px;background:var(--status-published);color:white;padding:2px 8px;border-radius:4px;font-size:10px;">SYNCED</div>' : ''}
+                                        ${p.stock_status !== 'instock' ? '<div style="position:absolute;top:8px;right:8px;background:var(--status-error);color:white;padding:2px 8px;border-radius:4px;font-size:10px;">OUT OF STOCK</div>' : ''}
+                                        <div style="height:150px;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;">
+                                            ${p.image_url ? `<img src="${p.image_url}" style="max-height:100%;max-width:100%;object-fit:contain;">` : '📷'}
+                                        </div>
+                                        <div style="padding:12px;">
+                                            <div style="font-size:12px;color:var(--text-muted);">${this.escapeHtml(p.brand_name || '')}</div>
+                                            <div style="font-weight:500;font-size:13px;margin:4px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${this.escapeHtml(p.title)}</div>
+                                            <div style="font-size:13px;">£${p.price}</div>
+                                            <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+                                                Score: ${p.match_score}
+                                            </div>
+                                            <div style="display:flex;gap:4px;margin-top:8px;">
+                                                ${p.status === 'pending' ? `
+                                                    <button class="btn btn-sm btn-primary" onclick="App.approveEditProduct(${id}, ${p.wc_product_id})" style="flex:1;">✓</button>
+                                                ` : ''}
+                                                <button class="btn btn-sm btn-secondary" onclick="App.rejectEditProduct(${id}, ${p.wc_product_id})" style="flex:1;">✕</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : `
+                            <div style="text-align:center;padding:40px;color:var(--text-muted);">
+                                <p>No products yet. Click "Preview" to see matching products.</p>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            content.innerHTML = `<div style="padding:40px;text-align:center;color:var(--status-error);">Error: ${error.message}</div>`;
+        }
+    },
+    
+    async previewAndApproveEdit(id) {
+        const modal = document.getElementById('edit-detail-modal');
+        const content = document.getElementById('edit-detail-content');
+        modal.style.display = 'block';
+        content.innerHTML = '<div class="loading" style="padding:40px;"><div class="spinner"></div></div>';
+        
+        try {
+            const preview = await this.api(`/edit-suggestions/${id}/preview`);
+            this.editManagerState.currentEditId = id;
+            this.editManagerState.previewProducts = preview.products;
+            
+            content.innerHTML = `
+                <div style="padding:24px;border-bottom:1px solid var(--border-default);display:flex;justify-content:space-between;align-items:start;">
+                    <div>
+                        <h2 style="margin-bottom:8px;">Preview: ${this.escapeHtml(preview.edit.name)}</h2>
+                        <p style="color:var(--text-secondary);">
+                            Found <strong>${preview.stats.total}</strong> matching products 
+                            (<span style="color:var(--status-published);">${preview.stats.in_stock} in stock</span>)
+                        </p>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <button class="btn btn-secondary" onclick="document.getElementById('edit-detail-modal').style.display='none'">Cancel</button>
+                        <button class="btn btn-primary" onclick="App.quickApproveAll(${id})">✓ Approve All & Save</button>
+                    </div>
+                </div>
+                
+                <div style="padding:20px;overflow-y:auto;max-height:calc(100vh - 200px);">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(180px, 1fr));gap:12px;">
+                        ${preview.products.map((p, idx) => `
+                            <div class="preview-product" data-idx="${idx}" data-wc-id="${p.wc_product_id}" style="border:1px solid var(--border-default);border-radius:8px;overflow:hidden;cursor:pointer;transition:all 0.2s;" onclick="App.togglePreviewProduct(this)">
+                                <div style="height:120px;background:var(--bg-tertiary);display:flex;align-items:center;justify-content:center;">
+                                    ${p.image_url ? `<img src="${p.image_url}" style="max-height:100%;max-width:100%;object-fit:contain;">` : '📷'}
+                                </div>
+                                <div style="padding:10px;">
+                                    <div style="font-size:11px;color:var(--text-muted);">${this.escapeHtml(p.brand_name || '')}</div>
+                                    <div style="font-weight:500;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${this.escapeHtml(p.title)}</div>
+                                    <div style="font-size:12px;margin-top:4px;">£${p.price} • Score: ${p.match_score}</div>
+                                    <div style="font-size:10px;color:var(--text-secondary);margin-top:4px;">${(p.match_reasons || []).slice(0, 2).join(', ')}</div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            content.innerHTML = `<div style="padding:40px;text-align:center;color:var(--status-error);">Error: ${error.message}</div>`;
+        }
+    },
+    
+    togglePreviewProduct(el) {
+        el.classList.toggle('rejected');
+        if (el.classList.contains('rejected')) {
+            el.style.opacity = '0.3';
+            el.style.borderColor = 'var(--status-error)';
+        } else {
+            el.style.opacity = '1';
+            el.style.borderColor = 'var(--border-default)';
+        }
+    },
+    
+    async quickApproveAll(id) {
+        // Get all non-rejected products
+        const products = document.querySelectorAll('.preview-product:not(.rejected)');
+        const wcProductIds = Array.from(products).map(el => parseInt(el.dataset.wcId));
+        
+        if (wcProductIds.length === 0) {
+            this.toast('No products selected', 'error');
+            return;
+        }
+        
+        try {
+            this.toast(`Approving ${wcProductIds.length} products...`, 'info');
+            
+            // First regenerate to save products
+            await this.api(`/edit-suggestions/${id}/regenerate`, { method: 'POST' });
+            
+            // Then approve all
+            await this.api(`/edit-suggestions/${id}/approve`, {
+                method: 'POST',
+                body: { approve_all: true }
+            });
+            
+            this.toast(`${wcProductIds.length} products approved!`, 'success');
+            document.getElementById('edit-detail-modal').style.display = 'none';
+            this.loadEditManager();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async previewEditProducts(id) {
+        try {
+            this.toast('Previewing products...', 'info');
+            const preview = await this.api(`/edit-suggestions/${id}/preview`);
+            this.toast(`Found ${preview.stats.total} products (${preview.stats.in_stock} in stock)`, 'success');
+            this.openEditDetail(id);
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async saveEditRules(id) {
+        const categories = document.getElementById('edit-rule-categories').value.split('\n').map(s => s.trim()).filter(s => s);
+        const keywords = document.getElementById('edit-rule-keywords').value.split('\n').map(s => s.trim()).filter(s => s);
+        const colors = document.getElementById('edit-rule-colors').value.split('\n').map(s => s.trim()).filter(s => s);
+        const excludeCategories = document.getElementById('edit-rule-exclude').value.split('\n').map(s => s.trim()).filter(s => s);
+        const autoRegenerate = document.getElementById('edit-auto-regenerate').checked;
+        
+        try {
+            await this.api(`/edit-suggestions/${id}/rules`, {
+                method: 'PUT',
+                body: { categories, keywords, colors, exclude_categories: excludeCategories, auto_regenerate: autoRegenerate }
+            });
+            this.toast('Rules saved!', 'success');
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async regenerateEditProducts(id) {
+        if (!confirm('Regenerate products based on current rules? This will add new matches and remove products that no longer match (except manually added ones).')) return;
+        
+        try {
+            this.toast('Regenerating products...', 'info');
+            const result = await this.api(`/edit-suggestions/${id}/regenerate`, { method: 'POST' });
+            this.toast(result.message, 'success');
+            this.openEditDetail(id);
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async approveEditProduct(editId, wcProductId) {
+        try {
+            await this.api(`/edit-suggestions/${editId}/approve`, {
+                method: 'POST',
+                body: { wc_product_ids: [wcProductId] }
+            });
+            this.toast('Product approved', 'success');
+            this.openEditDetail(editId);
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async approveAllEditProducts(id) {
+        try {
+            await this.api(`/edit-suggestions/${id}/approve`, {
+                method: 'POST',
+                body: { approve_all: true }
+            });
+            this.toast('All pending products approved', 'success');
+            this.openEditDetail(id);
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async rejectEditProduct(editId, wcProductId) {
+        try {
+            await this.api(`/edit-suggestions/${editId}/reject`, {
+                method: 'POST',
+                body: { wc_product_ids: [wcProductId] }
+            });
+            this.toast('Product removed', 'success');
+            this.openEditDetail(editId);
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async createEditInWP(id) {
+        if (!confirm('Create this Edit in WordPress? This will create a new Edit taxonomy term.')) return;
+        
+        try {
+            this.toast('Creating Edit in WordPress...', 'info');
+            const result = await this.api(`/edit-suggestions/${id}/create-wp`, { method: 'POST' });
+            this.toast(result.message, 'success');
+            this.loadEditManager();
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+    
+    async syncEditToWP(id) {
+        if (!confirm('Sync products to WordPress? This will assign/remove the Edit taxonomy from products.')) return;
+        
+        try {
+            this.toast('Syncing to WordPress...', 'info');
+            const result = await this.api(`/edit-suggestions/${id}/sync`, { method: 'POST' });
+            this.toast(result.message, 'success');
+            this.openEditDetail(id);
+        } catch (error) {
+            this.toast(error.message, 'error');
         }
     },
 
