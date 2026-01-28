@@ -296,6 +296,22 @@ class EditSuggestionController
     public function index(): void
     {
         try {
+            // Check if table exists first
+            $tableExists = Database::query(
+                "SELECT 1 FROM information_schema.tables 
+                 WHERE table_schema = DATABASE() AND table_name = 'edit_suggestions' LIMIT 1"
+            );
+            
+            if (empty($tableExists)) {
+                // Table doesn't exist yet - return empty array
+                echo json_encode([
+                    'success' => true,
+                    'data' => [],
+                    'message' => 'Run the edit_manager_migration.sql to enable this feature'
+                ]);
+                return;
+            }
+            
             $edits = Database::query(
                 "SELECT es.*,
                         (SELECT COUNT(*) FROM edit_products ep WHERE ep.edit_suggestion_id = es.id AND ep.status != 'rejected') as total_products,
@@ -385,6 +401,21 @@ class EditSuggestionController
     public function generateSuggestions(): void
     {
         try {
+            // Check if table exists first
+            $tableExists = Database::query(
+                "SELECT 1 FROM information_schema.tables 
+                 WHERE table_schema = DATABASE() AND table_name = 'edit_suggestions' LIMIT 1"
+            );
+            
+            if (empty($tableExists)) {
+                http_response_code(400);
+                echo json_encode([
+                    'success' => false,
+                    'error' => ['message' => 'Please run the edit_manager_migration.sql first to create the required tables.']
+                ]);
+                return;
+            }
+            
             $created = 0;
             $skipped = 0;
 
