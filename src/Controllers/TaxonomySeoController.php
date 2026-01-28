@@ -654,4 +654,338 @@ class TaxonomySeoController
             echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
         }
     }
+
+    // ==================== EDITS ====================
+
+    /**
+     * Get all edits with their SEO status and product counts
+     */
+    public function edits(): void
+    {
+        try {
+            $edits = Database::query(
+                "SELECT 
+                    e.id,
+                    e.wp_term_id,
+                    e.name,
+                    e.slug,
+                    e.count as product_count,
+                    e.seo_description,
+                    e.seo_meta_description,
+                    e.seo_updated_at
+                 FROM wp_edits e
+                 ORDER BY e.name ASC"
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $edits
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['message' => $e->getMessage()]
+            ]);
+        }
+    }
+
+    /**
+     * Get edit details with products info
+     */
+    public function editDetails(int $id): void
+    {
+        try {
+            $edit = Database::queryOne(
+                "SELECT * FROM wp_edits WHERE id = ?",
+                [$id]
+            );
+            
+            if (!$edit) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Edit not found']]);
+                return;
+            }
+            
+            // Get products in this edit from WordPress API
+            $service = new WordPressService($this->config);
+            $productIds = $service->getProductIdsByEdit($edit['wp_term_id']);
+            
+            // Get categories for these products (excluding sale and generic)
+            $categories = [];
+            $brands = [];
+            
+            if (!empty($productIds)) {
+                $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+                
+                // Get categories
+                $categories = Database::query(
+                    "SELECT DISTINCT pc.id, pc.name, pc.slug, COUNT(p.id) as product_count
+                     FROM wp_products p
+                     JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
+                     WHERE p.wc_product_id IN ({$placeholders})
+                     AND pc.slug NOT LIKE '%sale%' AND pc.name NOT LIKE '%Sale%'
+                     AND pc.slug NOT IN ('woman', 'women', 'man', 'men', 'clothing', 'accessories', 'all')
+                     GROUP BY pc.id, pc.name, pc.slug
+                     ORDER BY product_count DESC
+                     LIMIT 15",
+                    $productIds
+                );
+                
+                // Get brands
+                $brands = Database::query(
+                    "SELECT DISTINCT b.id, b.name, b.slug, COUNT(p.id) as product_count
+                     FROM wp_products p
+                     JOIN wp_brands b ON p.brand_id = b.id
+                     WHERE p.wc_product_id IN ({$placeholders})
+                     AND p.brand_id IS NOT NULL
+                     GROUP BY b.id, b.name, b.slug
+                     ORDER BY product_count DESC
+                     LIMIT 15",
+                    $productIds
+                );
+            }
+            
+            $edit['product_ids'] = $productIds;
+            $edit['categories'] = $categories;
+            $edit['brands'] = $brands;
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $edit
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+        }
+    }
+
+    /**
+     * Generate SEO content for an Edit
+     * Edits target specific events/seasons with longer-tail keywords
+     */
+    public function generateEditSeo(int $id): void
+    {
+        try {
+            $edit = Database::queryOne("SELECT * FROM wp_edits WHERE id = ?", [$id]);
+            
+            if (!$edit) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Edit not found']]);
+                return;
+            }
+            
+            // Get products in this edit from WordPress API
+            $service = new WordPressService($this->config);
+            $productIds = $service->getProductIdsByEdit($edit['wp_term_id']);
+            
+            if (empty($productIds)) {
+                http_response_code(400);
+                echo json_encode([
+                    'success' => false, 
+                    'error' => ['message' => "No products found in edit '{$edit['name']}'. Add products in WooCommerce first, then sync."]
+                ]);
+                return;
+            }
+            
+            $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+            
+            // Get top categories for these products
+            $categories = Database::query(
+                "SELECT DISTINCT pc.name, pc.slug, COUNT(p.id) as product_count
+                 FROM wp_products p
+                 JOIN wp_product_categories pc ON JSON_CONTAINS(p.category_slugs, CONCAT('\"', pc.slug, '\"'))
+                 WHERE p.wc_product_id IN ({$placeholders})
+                 AND pc.slug NOT LIKE '%sale%' AND pc.name NOT LIKE '%Sale%'
+                 AND pc.slug NOT IN ('woman', 'women', 'man', 'men', 'clothing', 'accessories', 'all')
+                 GROUP BY pc.id, pc.name, pc.slug
+                 ORDER BY product_count DESC
+                 LIMIT 10",
+                $productIds
+            );
+            
+            // Get top brands for these products
+            $brands = Database::query(
+                "SELECT DISTINCT b.name, b.slug, COUNT(p.id) as product_count
+                 FROM wp_products p
+                 JOIN wp_brands b ON p.brand_id = b.id
+                 WHERE p.wc_product_id IN ({$placeholders})
+                 AND p.brand_id IS NOT NULL
+                 GROUP BY b.id, b.name, b.slug
+                 ORDER BY product_count DESC
+                 LIMIT 8",
+                $productIds
+            );
+            
+            if (empty($categories) && empty($brands)) {
+                http_response_code(400);
+                echo json_encode([
+                    'success' => false, 
+                    'error' => ['message' => "No category or brand data found for products in this edit. Sync products first."]
+                ]);
+                return;
+            }
+            
+            error_log("generateEditSeo: Edit '{$edit['name']}' has " . count($productIds) . " products, " . count($categories) . " categories, " . count($brands) . " brands");
+            
+            // Build category and brand link info
+            $categoryInfo = array_map(function($c) {
+                return "{$c['name']} ({$c['product_count']} products) - link: /product-category/{$c['slug']}/";
+            }, $categories);
+            
+            $brandInfo = array_map(function($b) {
+                return "{$b['name']} ({$b['product_count']} products) - link: /brand/{$b['slug']}/";
+            }, $brands);
+            
+            // Get writing guidelines
+            $guidelines = '';
+            if (class_exists('\\App\\Controllers\\WritingGuidelinesController')) {
+                $guidelines = \App\Controllers\WritingGuidelinesController::getForPrompt();
+            }
+            
+            // Generate with Claude using Edit-specific structure
+            $claude = new ClaudeService($this->config);
+            $content = $claude->generateEditSeo(
+                $edit['name'],
+                $categoryInfo,
+                $brandInfo,
+                count($productIds),
+                $guidelines
+            );
+            
+            if (!$content || empty($content['intro'])) {
+                throw new \Exception('Failed to generate SEO content');
+            }
+            
+            // Save to database
+            Database::execute(
+                "UPDATE wp_edits SET seo_description = ?, seo_meta_description = ?, seo_updated_at = NOW() WHERE id = ?",
+                [$content['intro'], $content['seo_content'], $id]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'data' => [
+                    'description' => $content['intro'],
+                    'seo_content' => $content['seo_content']
+                ],
+                'context' => [
+                    'product_count' => count($productIds),
+                    'categories_used' => array_column($categories, 'name'),
+                    'brands_used' => array_column($brands, 'name')
+                ],
+                'message' => 'Edit SEO content generated using ' . count($categories) . ' categories and ' . count($brands) . ' brands'
+            ]);
+        } catch (\Exception $e) {
+            error_log("generateEditSeo error: " . $e->getMessage());
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+        }
+    }
+
+    /**
+     * Save Edit SEO content
+     */
+    public function saveEditSeo(int $id, array $input): void
+    {
+        try {
+            Database::execute(
+                "UPDATE wp_edits SET seo_description = ?, seo_meta_description = ?, seo_updated_at = NOW() WHERE id = ?",
+                [$input['description'] ?? '', $input['seo_content'] ?? '', $id]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Edit SEO saved'
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+        }
+    }
+
+    /**
+     * Push Edit SEO to WordPress
+     */
+    public function pushEditToWordPress(int $id): void
+    {
+        try {
+            $edit = Database::queryOne("SELECT * FROM wp_edits WHERE id = ?", [$id]);
+            
+            if (!$edit) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Edit not found']]);
+                return;
+            }
+            
+            $service = new WordPressService($this->config);
+            $success = $service->updateEditSeo($edit['wp_term_id'], [
+                'description' => $edit['seo_description'] ?? '',
+                'meta_description' => $edit['seo_meta_description'] ?? ''
+            ]);
+            
+            if (!$success) {
+                throw new \Exception('Failed to update WordPress');
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Edit SEO pushed to WordPress'
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+        }
+    }
+
+    /**
+     * Pull Edit SEO from WordPress
+     */
+    public function pullEditFromWordPress(int $id): void
+    {
+        try {
+            $edit = Database::queryOne("SELECT * FROM wp_edits WHERE id = ?", [$id]);
+            
+            if (!$edit) {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Edit not found']]);
+                return;
+            }
+            
+            $service = new WordPressService($this->config);
+            $edits = $service->getAllEditsWithAcf();
+            
+            // Find this edit in the response
+            $seoData = null;
+            foreach ($edits as $e) {
+                if ($e['id'] == $edit['wp_term_id']) {
+                    $acf = $e['acf'] ?? [];
+                    $seoData = [
+                        'description' => $acf['taxonomy_description'] ?? '',
+                        'meta_description' => $acf['taxonomy_seo_description'] ?? ''
+                    ];
+                    break;
+                }
+            }
+            
+            if (!$seoData) {
+                throw new \Exception('Edit not found in WordPress response');
+            }
+            
+            // Update local database
+            Database::execute(
+                "UPDATE wp_edits SET seo_description = ?, seo_meta_description = ?, seo_updated_at = NOW() WHERE id = ?",
+                [$seoData['description'] ?? '', $seoData['meta_description'] ?? '', $id]
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'data' => $seoData,
+                'message' => 'Edit SEO pulled from WordPress'
+            ]);
+        } catch (\Exception $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+        }
+    }
 }

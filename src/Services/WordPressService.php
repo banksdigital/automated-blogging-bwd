@@ -774,4 +774,130 @@ public function getProductBrand(int $productId): ?array
             throw $e;
         }
     }
+
+    /**
+     * Get all edit terms from WordPress REST API with ACF fields
+     */
+    public function getAllEditsWithAcf(): array
+    {
+        $edits = [];
+        $page = 1;
+        $perPage = 100;
+        
+        do {
+            $url = rtrim($this->baseUrl, '/') . "/wp/v2/edit?per_page={$perPage}&page={$page}";
+            
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Basic ' . base64_encode($this->wpUsername . ':' . $this->wpPassword)
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            if ($httpCode !== 200) {
+                error_log("Failed to fetch edits page {$page}: HTTP {$httpCode} - Response: {$response}");
+                break;
+            }
+            
+            $pageEdits = json_decode($response, true);
+            if (empty($pageEdits) || !is_array($pageEdits)) {
+                break;
+            }
+            
+            // Debug first page
+            if ($page === 1 && !empty($pageEdits[0])) {
+                error_log("Edit API response keys: " . implode(', ', array_keys($pageEdits[0])));
+                if (isset($pageEdits[0]['acf'])) {
+                    error_log("Edit ACF fields found: " . json_encode($pageEdits[0]['acf']));
+                }
+            }
+            
+            $edits = array_merge($edits, $pageEdits);
+            $page++;
+            
+            if ($page > 20) break;
+            
+        } while (count($pageEdits) === $perPage);
+        
+        error_log("Fetched " . count($edits) . " edits from WordPress");
+        return $edits;
+    }
+
+    /**
+     * Get product IDs that belong to a specific Edit term
+     */
+    public function getProductIdsByEdit(int $editTermId): array
+    {
+        $productIds = [];
+        $page = 1;
+        $perPage = 100;
+        
+        do {
+            $url = $this->baseUrl . "/wp/v2/product?edit={$editTermId}&per_page={$perPage}&page={$page}&status=publish&_fields=id";
+            
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Content-Type: application/json',
+                'Authorization: Basic ' . base64_encode($this->wpUsername . ':' . $this->wpPassword)
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            
+            if ($httpCode !== 200) {
+                error_log("getProductIdsByEdit: Failed for edit {$editTermId}: HTTP {$httpCode}");
+                return [];
+            }
+            
+            $products = json_decode($response, true);
+            
+            if (!is_array($products) || empty($products)) {
+                break;
+            }
+            
+            foreach ($products as $product) {
+                if (isset($product['id'])) {
+                    $productIds[] = $product['id'];
+                }
+            }
+            
+            $page++;
+            if ($page > 10) break;
+            
+        } while (count($products) === $perPage);
+        
+        error_log("getProductIdsByEdit: Found " . count($productIds) . " products for edit term {$editTermId}");
+        return $productIds;
+    }
+
+    /**
+     * Update Edit taxonomy SEO fields via ACF REST API
+     */
+    public function updateEditSeo(int $termId, array $seoData): bool
+    {
+        try {
+            $endpoint = "/wp/v2/edit/{$termId}";
+            
+            // Edits use same field names as brands
+            $acfData = [
+                'taxonomy_description' => $seoData['description'] ?? '',
+                'taxonomy_seo_description' => $seoData['meta_description'] ?? ''
+            ];
+            
+            $data = ['acf' => $acfData];
+            
+            $result = $this->wpRequest('POST', $endpoint, $data);
+            
+            return isset($result['id']);
+        } catch (\Exception $e) {
+            error_log("Failed to update edit SEO for term {$termId}: " . $e->getMessage());
+            throw $e;
+        }
+    }
 }

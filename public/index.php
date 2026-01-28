@@ -200,6 +200,9 @@ function routeApi(string $path, string $method, array $config): void
         case $path === '/wordpress/sync/brands' && $method === 'POST':
             (new \App\Controllers\WordPressController($config))->syncBrands();
             break;
+        case $path === '/wordpress/sync/edits' && $method === 'POST':
+            (new \App\Controllers\WordPressController($config))->syncEdits();
+            break;
         case $path === '/wordpress/sync/product-categories' && $method === 'POST':
             (new \App\Controllers\WordPressController($config))->syncProductCategories();
             break;
@@ -303,6 +306,25 @@ function routeApi(string $path, string $method, array $config): void
             break;
         case preg_match('#^/taxonomy-seo/categories/(\d+)/pull$#', $path, $m) && $method === 'POST':
             (new \App\Controllers\TaxonomySeoController($config))->pullCategoryFromWordPress((int)$m[1]);
+            break;
+        // Edits
+        case $path === '/taxonomy-seo/edits' && $method === 'GET':
+            (new \App\Controllers\TaxonomySeoController($config))->edits();
+            break;
+        case preg_match('#^/taxonomy-seo/edits/(\d+)$#', $path, $m) && $method === 'GET':
+            (new \App\Controllers\TaxonomySeoController($config))->editDetails((int)$m[1]);
+            break;
+        case preg_match('#^/taxonomy-seo/edits/(\d+)/generate$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\TaxonomySeoController($config))->generateEditSeo((int)$m[1]);
+            break;
+        case preg_match('#^/taxonomy-seo/edits/(\d+)$#', $path, $m) && $method === 'PUT':
+            (new \App\Controllers\TaxonomySeoController($config))->saveEditSeo((int)$m[1], $input);
+            break;
+        case preg_match('#^/taxonomy-seo/edits/(\d+)/push$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\TaxonomySeoController($config))->pushEditToWordPress((int)$m[1]);
+            break;
+        case preg_match('#^/taxonomy-seo/edits/(\d+)/pull$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\TaxonomySeoController($config))->pullEditFromWordPress((int)$m[1]);
             break;
             
         // Roadmap
@@ -415,7 +437,10 @@ function routeApi(string $path, string $method, array $config): void
             (new \App\Controllers\ContentEngine($config))->generateCalendar($input);
             break;
         case $path === '/content/generate-pending' && $method === 'POST':
-            (new \App\Controllers\ContentEngine($config))->generatePendingContent();
+            (new \App\Controllers\ContentEngine($config))->generatePendingContent($input);
+            break;
+        case $path === '/content/preview-autopilot' && $method === 'POST':
+            (new \App\Controllers\ContentEngine($config))->previewAutoPilot($input);
             break;
         case $path === '/content/review-queue' && $method === 'GET':
             (new \App\Controllers\ContentEngine($config))->getReviewQueue();

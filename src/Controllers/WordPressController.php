@@ -227,6 +227,90 @@ class WordPressController
     }
 
     /**
+     * Sync Edits (custom taxonomy) from WooCommerce
+     */
+    public function syncEdits(): void
+    {
+        try {
+            $service = new WordPressService($this->config);
+            $edits = $service->getAllEditsWithAcf();
+
+            $synced = 0;
+            $withSeo = 0;
+            $hasAcfFields = false;
+            
+            // Debug first edit's structure
+            if (!empty($edits[0])) {
+                error_log("First edit structure: " . json_encode(array_keys($edits[0])));
+                if (isset($edits[0]['acf'])) {
+                    error_log("First edit ACF fields: " . json_encode($edits[0]['acf']));
+                }
+            }
+            
+            foreach ($edits as $edit) {
+                if (isset($edit['acf']) && !empty($edit['acf'])) {
+                    $hasAcfFields = true;
+                }
+                
+                $acf = $edit['acf'] ?? [];
+                $seoDescription = !empty($acf['taxonomy_description']) ? $acf['taxonomy_description'] : null;
+                $seoMetaDescription = !empty($acf['taxonomy_seo_description']) ? $acf['taxonomy_seo_description'] : null;
+                
+                if ($seoDescription || $seoMetaDescription) {
+                    $withSeo++;
+                }
+                
+                Database::execute(
+                    "INSERT INTO wp_edits (wp_term_id, name, slug, description, count, seo_description, seo_meta_description, seo_updated_at, synced_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                     ON DUPLICATE KEY UPDATE name = VALUES(name), slug = VALUES(slug), 
+                     description = VALUES(description), count = VALUES(count),
+                     seo_description = COALESCE(VALUES(seo_description), seo_description),
+                     seo_meta_description = COALESCE(VALUES(seo_meta_description), seo_meta_description),
+                     seo_updated_at = IF(VALUES(seo_description) IS NOT NULL OR VALUES(seo_meta_description) IS NOT NULL, NOW(), seo_updated_at),
+                     synced_at = NOW()",
+                    [
+                        $edit['id'],
+                        html_entity_decode($edit['name']),
+                        $edit['slug'],
+                        $edit['description'] ?? null,
+                        $edit['count'] ?? 0,
+                        $seoDescription,
+                        $seoMetaDescription,
+                        ($seoDescription || $seoMetaDescription) ? date('Y-m-d H:i:s') : null
+                    ]
+                );
+                $synced++;
+            }
+
+            $this->logActivity('sync_edits', 'system', null, ['count' => $synced, 'with_seo' => $withSeo]);
+
+            $message = "Synced {$synced} edits ({$withSeo} with SEO content)";
+            if (!$hasAcfFields && $synced > 0) {
+                $message .= ". ⚠️ ACF fields not found - check 'Show in REST API' is enabled.";
+            }
+
+            echo json_encode([
+                'success' => true,
+                'data' => [
+                    'synced' => $synced, 
+                    'with_seo' => $withSeo,
+                    'acf_enabled' => $hasAcfFields,
+                    'message' => $message
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            error_log("Edit sync error: " . $e->getMessage());
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['code' => 'SYNC_ERROR', 'message' => $e->getMessage()]
+            ]);
+        }
+    }
+
+    /**
      * Sync product categories from WooCommerce
      */
     public function syncProductCategories(): void
@@ -533,6 +617,7 @@ public function syncProducts(): void
     {
         $status = [
             'brands' => $this->getLastSync('wp_brands'),
+            'edits' => $this->getLastSync('wp_edits'),
             'product_categories' => $this->getLastSync('wp_product_categories'),
             'products' => $this->getLastSync('wp_products'),
             'categories' => $this->getLastSync('wp_categories'),

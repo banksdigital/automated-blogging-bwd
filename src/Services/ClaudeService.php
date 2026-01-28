@@ -1006,4 +1006,124 @@ PROMPT;
         
         return $result;
     }
+
+    /**
+     * Generate SEO content for an Edit page
+     * Edits target specific events/seasons with longer-tail keywords
+     */
+    public function generateEditSeo(string $editName, array $categoryInfo, array $brandInfo, int $productCount, string $writingGuidelines = ''): array
+    {
+        $categoryListText = !empty($categoryInfo) ? implode("\n", $categoryInfo) : "(No categories)";
+        $brandListText = !empty($brandInfo) ? implode("\n", $brandInfo) : "(No brands)";
+        
+        $systemPrompt = <<<PROMPT
+You are an expert SEO copywriter for Black White Denim, a premium women's fashion retailer.
+
+You are writing content for an EDIT page. Edits are curated collections targeting specific events, seasons, or trends. They aim to rank for longer-tail, intent-led keywords like "Valentine's Day gifts for her" or "Wedding guest dresses 2024".
+
+BRAND VOICE:
+- Sophisticated, confident, and aspirational
+- Write in British English (colour, favourite, centre, etc.)
+- Warm but professional tone
+- Focus on quality, style, and timeless fashion
+
+{$writingGuidelines}
+
+CRITICAL FORMATTING RULES:
+1. NEVER use em-dashes (—) or en-dashes (–) - use commas instead
+2. Do NOT start sentences with "From" or "Whether"
+3. Use standard hyphens only for compound words
+4. Output clean HTML with no escape characters
+
+CONTENT RULES:
+1. ONLY mention categories and brands from the provided lists
+2. Create natural internal links using HTML anchor tags
+3. Links should feel natural, not forced
+4. Do NOT link dump - be selective with 2-4 category links and 1-3 brand links max
+5. Focus on the event/occasion/season the Edit is targeting
+PROMPT;
+
+        $userPrompt = <<<PROMPT
+Generate SEO content for the Edit: "{$editName}"
+
+This Edit contains {$productCount} products.
+
+=== CATEGORIES IN THIS EDIT (only link to these) ===
+{$categoryListText}
+
+=== BRANDS IN THIS EDIT (only link to these) ===
+{$brandListText}
+
+Generate TWO pieces of content:
+
+1. INTRO (80-120 words, single paragraph above products):
+   This is the hero section intro. It should:
+   - Acknowledge the event/season/occasion
+   - Reference the types of products included (from category list)
+   - Soft mention of 2-3 key brands (no links yet, just names)
+   - Set the scene for what shoppers will find
+   - Commercial and intent-led tone
+   - NO links in this section
+   
+   Example style: "Our Valentine's Day edit brings together statement knitwear, elevated accessories and effortless dresses from brands such as Anine Bing, Ganni and more, perfect for gifting or styling your own look for the occasion."
+
+2. SEO_CONTENT (250-350 words, structured with H2 headers):
+   This is the SEO block below the hero. It should:
+   - Use 2-3 short sections with <h2> headers
+   - Suggested section ideas: "What to buy for [occasion]", "Styles that last beyond [event]", "How to style [occasion] looks"
+   - Explain why these products are chosen for this Edit
+   - Include 2-4 category links using: <a href="/product-category/slug/">Category Name</a>
+   - Include 1-3 brand links using: <a href="/brand/slug/">Brand Name</a>
+   - Links should feel natural within the content
+   - Focus on helping the page rank for the Edit's target keywords
+   
+   Example link usage: "Looking for something timeless? Explore our full range of <a href="/product-category/dresses/">women's dresses</a> for styles that work beyond Valentine's Day."
+
+Return ONLY valid JSON:
+{"intro": "hero intro paragraph (no links)...", "seo_content": "<h2>Section Title</h2><p>Content with links...</p><h2>Another Section</h2><p>More content...</p>"}
+PROMPT;
+
+        $response = $this->callApi($systemPrompt, $userPrompt);
+        
+        // Clean response - remove markdown code blocks if present
+        $response = preg_replace('/^```json\s*/i', '', $response);
+        $response = preg_replace('/\s*```$/i', '', $response);
+        $response = trim($response);
+        
+        // Parse JSON response
+        $content = json_decode($response, true);
+        
+        if (!$content || !isset($content['intro'])) {
+            // Try to extract from text if JSON parsing fails
+            preg_match('/"intro"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $introMatch);
+            preg_match('/"seo_content"\s*:\s*"(.*?)(?<!\\\\)"/s', $response, $seoMatch);
+            
+            $content = [
+                'intro' => $introMatch[1] ?? '',
+                'seo_content' => $seoMatch[1] ?? ''
+            ];
+        }
+        
+        // Clean up content (but preserve H2 tags for SEO content)
+        $intro = isset($content['intro']) ? $this->cleanSeoContent($content['intro']) : '';
+        $seoContent = isset($content['seo_content']) ? $content['seo_content'] : '';
+        
+        // Clean SEO content but preserve HTML structure
+        $seoContent = str_replace(['\\n', "\r\n", "\r"], ' ', $seoContent);
+        $seoContent = str_replace(
+            ['—', '–', '―', '‒', '&mdash;', '&ndash;'],
+            [',', ',', ',', ',', ',', ','],
+            $seoContent
+        );
+        $seoContent = preg_replace('/\s+/', ' ', $seoContent);
+        // Clean up spacing around HTML tags
+        $seoContent = preg_replace('/\s*<(\/?)h2>\s*/', '<$1h2>', $seoContent);
+        $seoContent = preg_replace('/\s*<(\/?)p>\s*/', '<$1p>', $seoContent);
+        $seoContent = trim($seoContent);
+        
+        return [
+            'intro' => $intro,
+            'seo_content' => $seoContent
+        ];
+    }
 }

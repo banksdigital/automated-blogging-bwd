@@ -178,8 +178,17 @@ const App = {
                                         : '<span style="color:var(--status-published);">●</span> All caught up!'}
                                 </div>
                             </div>
-                            <div style="display:flex;gap:8px;">
-                                <button class="btn btn-primary" onclick="App.generateContent()" id="generate-btn">▶ Run Auto-Pilot</button>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <select id="autopilot-weeks" class="form-input" style="width:auto;padding:8px 12px;">
+                                    <option value="1">1 week</option>
+                                    <option value="2">2 weeks</option>
+                                    <option value="3" selected>3 weeks</option>
+                                    <option value="4">4 weeks</option>
+                                    <option value="6">6 weeks</option>
+                                    <option value="8">8 weeks</option>
+                                </select>
+                                <button class="btn btn-secondary" onclick="App.previewAutoPilot()">👁️ Preview</button>
+                                <button class="btn btn-primary" onclick="App.runAutoPilot()" id="generate-btn">▶ Run Auto-Pilot</button>
                             </div>
                         </div>
                     </div>
@@ -273,7 +282,96 @@ const App = {
         }
     },
     
-    async generateContent() {
+    async previewAutoPilot() {
+        const weeks = document.getElementById('autopilot-weeks')?.value || 3;
+        
+        try {
+            const preview = await this.api('/content/preview-autopilot', { 
+                method: 'POST',
+                body: JSON.stringify({ weeks: parseInt(weeks) })
+            });
+            
+            // Build preview modal content
+            let eventsHtml = '';
+            if (preview.events && preview.events.length > 0) {
+                eventsHtml = `
+                    <div style="margin-bottom:16px;">
+                        <strong>📅 Upcoming Events (${preview.events.length}):</strong>
+                        <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">
+                            ${preview.events.map(e => `
+                                <span style="background:var(--status-review);color:white;padding:4px 10px;border-radius:4px;font-size:12px;">
+                                    ${this.escapeHtml(e.name)} (${new Date(e.start_date).toLocaleDateString()})
+                                </span>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            let itemsHtml = '';
+            if (preview.items && preview.items.length > 0) {
+                itemsHtml = `
+                    <div style="max-height:300px;overflow-y:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                            <thead>
+                                <tr style="border-bottom:1px solid var(--border-default);">
+                                    <th style="text-align:left;padding:8px;">Publish Date</th>
+                                    <th style="text-align:left;padding:8px;">Template</th>
+                                    <th style="text-align:left;padding:8px;">Event</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${preview.items.map(item => `
+                                    <tr style="border-bottom:1px solid var(--border-default);">
+                                        <td style="padding:8px;">${new Date(item.target_publish_date).toLocaleDateString()}</td>
+                                        <td style="padding:8px;">${this.escapeHtml(item.template_name)}</td>
+                                        <td style="padding:8px;">${item.event_name ? this.escapeHtml(item.event_name) : '<span style="color:var(--text-muted);">—</span>'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else {
+                itemsHtml = '<p style="color:var(--text-muted);text-align:center;padding:20px;">No pending content to generate for this period.</p>';
+            }
+            
+            // Show modal
+            const modal = document.createElement('div');
+            modal.id = 'autopilot-preview-modal';
+            modal.innerHTML = `
+                <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;">
+                    <div style="background:var(--bg-card);padding:32px;border-radius:8px;width:100%;max-width:700px;max-height:90vh;overflow-y:auto;">
+                        <h2 style="margin-bottom:16px;">Auto-Pilot Preview (${weeks} weeks)</h2>
+                        
+                        <div style="background:var(--bg-tertiary);padding:16px;border-radius:8px;margin-bottom:20px;">
+                            <div style="font-size:24px;font-weight:600;color:var(--status-published);">${preview.total_pending}</div>
+                            <div style="color:var(--text-secondary);">posts will be generated</div>
+                        </div>
+                        
+                        ${eventsHtml}
+                        ${itemsHtml}
+                        
+                        <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:24px;">
+                            <button class="btn btn-secondary" onclick="document.getElementById('autopilot-preview-modal').remove()">Cancel</button>
+                            ${preview.total_pending > 0 ? `
+                                <button class="btn btn-primary" onclick="document.getElementById('autopilot-preview-modal').remove(); App.runAutoPilot();">
+                                    ▶ Generate ${preview.total_pending} Posts
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
+    },
+
+    async runAutoPilot() {
+        const weeks = document.getElementById('autopilot-weeks')?.value || 3;
         const btn = document.getElementById('generate-btn');
         btn.disabled = true;
         btn.textContent = '⏳ Starting...';
@@ -286,10 +384,10 @@ const App = {
                 <div style="background:var(--bg-card);padding:40px 60px;border-radius:8px;text-align:center;min-width:400px;">
                     <div class="spinner" style="margin:0 auto 20px;"></div>
                     <div style="font-size:18px;font-weight:600;margin-bottom:8px;">Auto-Pilot Running</div>
-                    <div id="autopilot-status" style="color:var(--text-secondary);font-size:14px;">Checking for pending content...</div>
+                    <div id="autopilot-status" style="color:var(--text-secondary);font-size:14px;">Generating content for ${weeks} weeks...</div>
                     <div style="margin-top:20px;background:var(--bg-tertiary);border-radius:4px;padding:16px;text-align:left;">
                         <div id="autopilot-log" style="font-size:12px;color:var(--text-muted);max-height:150px;overflow-y:auto;">
-                            <div>⏳ Starting auto-pilot...</div>
+                            <div>⏳ Starting auto-pilot for ${weeks} weeks...</div>
                         </div>
                     </div>
                     <div style="color:var(--text-muted);font-size:12px;margin-top:16px;">This may take 30-60 seconds per post</div>
@@ -311,10 +409,13 @@ const App = {
         try {
             updateStatus('Finding scheduled content...', '🔍 Checking scheduled_content table...');
             
-            const result = await this.api('/content/generate-pending', { method: 'POST' });
+            const result = await this.api('/content/generate-pending', { 
+                method: 'POST',
+                body: JSON.stringify({ weeks: parseInt(weeks) })
+            });
             
             if (result.generated && result.generated > 0) {
-                updateStatus('Complete!', `✅ Generated ${result.generated} post(s)!`);
+                updateStatus('Complete!', `✅ Generated ${result.generated} of ${result.total} post(s)!`);
             } else {
                 updateStatus('Complete!', 'ℹ️ No pending content to generate');
             }
@@ -334,6 +435,11 @@ const App = {
             btn.disabled = false;
             btn.textContent = '▶ Run Auto-Pilot';
         }
+    },
+
+    // Keep old function name for backwards compatibility
+    async generateContent() {
+        return this.runAutoPilot();
     },
     
     async approvePost(postId) {
@@ -1546,6 +1652,7 @@ const App = {
                 <div style="display:flex;gap:8px;margin-bottom:24px;">
                     <button class="btn ${this.taxonomySeoTab === 'brands' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTaxonomySeoTab('brands')">🏷️ Brands</button>
                     <button class="btn ${this.taxonomySeoTab === 'categories' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTaxonomySeoTab('categories')">📁 Categories</button>
+                    <button class="btn ${this.taxonomySeoTab === 'edits' ? 'btn-primary' : 'btn-secondary'}" onclick="App.setTaxonomySeoTab('edits')">✨ Edits</button>
                 </div>
                 
                 <div id="taxonomy-seo-content">
@@ -1613,7 +1720,8 @@ const App = {
     setTaxonomySeoTab(tab) {
         this.taxonomySeoTab = tab;
         document.querySelectorAll('.page-header + div .btn').forEach((btn, i) => {
-            btn.className = `btn ${(i === 0 && tab === 'brands') || (i === 1 && tab === 'categories') ? 'btn-primary' : 'btn-secondary'}`;
+            const isActive = (i === 0 && tab === 'brands') || (i === 1 && tab === 'categories') || (i === 2 && tab === 'edits');
+            btn.className = `btn ${isActive ? 'btn-primary' : 'btn-secondary'}`;
         });
         this.loadTaxonomySeoTab();
     },
@@ -1626,9 +1734,12 @@ const App = {
             if (this.taxonomySeoTab === 'brands') {
                 const brands = await this.api('/taxonomy-seo/brands');
                 container.innerHTML = this.renderBrandsSeoTable(brands);
-            } else {
+            } else if (this.taxonomySeoTab === 'categories') {
                 const categories = await this.api('/taxonomy-seo/categories');
                 container.innerHTML = this.renderCategoriesSeoTable(categories);
+            } else if (this.taxonomySeoTab === 'edits') {
+                const edits = await this.api('/taxonomy-seo/edits');
+                container.innerHTML = this.renderEditsSeoTable(edits);
             }
         } catch (error) {
             container.innerHTML = `<div class="card"><div class="card-body"><p style="color:var(--status-error);">Error: ${error.message}</p></div></div>`;
@@ -1775,6 +1886,222 @@ const App = {
                 </div>
             </div>
         `;
+    },
+    
+    renderEditsSeoTable(edits) {
+        const withSeo = edits.filter(e => e.seo_description);
+        const withoutSeo = edits.filter(e => !e.seo_description);
+        const withProducts = edits.filter(e => e.product_count > 0);
+        
+        return `
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">📊 Edits SEO Status</span>
+                </div>
+                <div class="card-body">
+                    <div style="display:flex;gap:24px;flex-wrap:wrap;">
+                        <div><strong style="color:var(--status-published);">${withSeo.length}</strong> edits with SEO content</div>
+                        <div><strong style="color:var(--status-review);">${withoutSeo.length}</strong> edits need SEO content</div>
+                        <div><strong>${withProducts.length}</strong> edits have products</div>
+                    </div>
+                    <p style="margin-top:12px;color:var(--text-muted);font-size:13px;">
+                        💡 Edits target specific events/seasons with longer-tail keywords. Only edits with products can have SEO generated.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+                    <span class="card-title">✨ Edits (${edits.length})</span>
+                    <div id="bulk-actions-edits" style="display:none;gap:8px;">
+                        <span id="selected-count-edits" style="color:var(--text-secondary);margin-right:8px;">0 selected</span>
+                        <button class="btn btn-sm btn-primary" onclick="App.bulkGenerateEdits()">✨ Generate Selected</button>
+                        <button class="btn btn-sm" style="background:var(--status-published);color:white;" onclick="App.bulkPushEdits()">⬆️ Push Selected to WP</button>
+                    </div>
+                </div>
+                <div class="card-body" style="padding:0;">
+                    <table style="width:100%;border-collapse:collapse;">
+                        <thead>
+                            <tr style="border-bottom:1px solid var(--border-default);">
+                                <th style="text-align:center;padding:12px 8px;width:40px;">
+                                    <input type="checkbox" id="select-all-edits" onchange="App.toggleSelectAllEdits(this)">
+                                </th>
+                                <th style="text-align:left;padding:12px 16px;font-size:12px;color:var(--text-secondary);">Edit</th>
+                                <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">Products</th>
+                                <th style="text-align:center;padding:12px 8px;font-size:12px;color:var(--text-secondary);">SEO Status</th>
+                                <th style="text-align:right;padding:12px 16px;font-size:12px;color:var(--text-secondary);">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${edits.map(e => `
+                                <tr style="border-bottom:1px solid var(--border-default);" data-edit-id="${e.id}">
+                                    <td style="padding:12px 8px;text-align:center;">
+                                        <input type="checkbox" class="edit-checkbox" value="${e.id}" onchange="App.updateEditSelection()" ${e.product_count === 0 ? 'disabled title="No products in this edit"' : ''}>
+                                    </td>
+                                    <td style="padding:12px 16px;">
+                                        <div style="font-weight:500;">${this.escapeHtml(e.name)}</div>
+                                        <div style="font-size:12px;color:var(--text-secondary);">/edit/${e.slug}/</div>
+                                    </td>
+                                    <td style="padding:12px 8px;text-align:center;">
+                                        ${e.product_count > 0 
+                                            ? `<span style="color:var(--status-published);">${e.product_count}</span>` 
+                                            : '<span style="color:var(--text-muted);">0</span>'}
+                                    </td>
+                                    <td style="padding:12px 8px;text-align:center;">
+                                        ${e.seo_description 
+                                            ? '<span style="color:var(--status-published);">✓ Has SEO</span>' 
+                                            : '<span style="color:var(--text-muted);">—</span>'}
+                                    </td>
+                                    <td style="padding:12px 16px;text-align:right;">
+                                        ${e.product_count > 0 
+                                            ? `<button class="btn btn-sm btn-secondary" onclick="App.generateEditSeo(${e.id})" style="margin-right:4px;">✨ Generate</button>`
+                                            : `<button class="btn btn-sm btn-secondary" disabled title="Add products first" style="margin-right:4px;opacity:0.5;">✨ Generate</button>`
+                                        }
+                                        <button class="btn btn-sm btn-secondary" onclick="App.editEditSeo(${e.id})">Edit</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    },
+    
+    // Bulk selection functions for Edits
+    toggleSelectAllEdits(checkbox) {
+        const checkboxes = document.querySelectorAll('.edit-checkbox:not(:disabled)');
+        checkboxes.forEach(cb => cb.checked = checkbox.checked);
+        this.updateEditSelection();
+    },
+    
+    updateEditSelection() {
+        const checkboxes = document.querySelectorAll('.edit-checkbox:checked');
+        const count = checkboxes.length;
+        const bulkActions = document.getElementById('bulk-actions-edits');
+        const countSpan = document.getElementById('selected-count-edits');
+        
+        if (count > 0) {
+            bulkActions.style.display = 'flex';
+            countSpan.textContent = `${count} selected`;
+        } else {
+            bulkActions.style.display = 'none';
+        }
+        
+        const allCheckboxes = document.querySelectorAll('.edit-checkbox:not(:disabled)');
+        const selectAll = document.getElementById('select-all-edits');
+        selectAll.checked = count === allCheckboxes.length && count > 0;
+        selectAll.indeterminate = count > 0 && count < allCheckboxes.length;
+    },
+    
+    getSelectedEditIds() {
+        return Array.from(document.querySelectorAll('.edit-checkbox:checked')).map(cb => parseInt(cb.value));
+    },
+    
+    async bulkGenerateEdits() {
+        const ids = this.getSelectedEditIds();
+        if (ids.length === 0) return;
+        
+        if (!confirm(`Generate SEO content for ${ids.length} edits? This may take a while.`)) return;
+        
+        this.toast(`Generating SEO for ${ids.length} edits...`, 'info');
+        
+        let success = 0;
+        let failed = 0;
+        
+        for (const id of ids) {
+            try {
+                await this.api(`/taxonomy-seo/edits/${id}/generate`, { method: 'POST' });
+                success++;
+                this.toast(`Generated ${success}/${ids.length}...`, 'info');
+            } catch (error) {
+                failed++;
+                console.error(`Failed to generate edit ${id}:`, error);
+            }
+        }
+        
+        this.toast(`Completed: ${success} generated, ${failed} failed`, success > 0 ? 'success' : 'error');
+        this.loadTaxonomySeoTab();
+    },
+    
+    async bulkPushEdits() {
+        const ids = this.getSelectedEditIds();
+        if (ids.length === 0) return;
+        
+        if (!confirm(`Push SEO content for ${ids.length} edits to WordPress?`)) return;
+        
+        this.toast(`Pushing ${ids.length} edits to WordPress...`, 'info');
+        
+        let success = 0;
+        let failed = 0;
+        
+        for (const id of ids) {
+            try {
+                await this.api(`/taxonomy-seo/edits/${id}/push`, { method: 'POST' });
+                success++;
+            } catch (error) {
+                failed++;
+                console.error(`Failed to push edit ${id}:`, error);
+            }
+        }
+        
+        this.toast(`Completed: ${success} pushed, ${failed} failed`, success > 0 ? 'success' : 'error');
+    },
+    
+    async generateEditSeo(id) {
+        if (!confirm('Generate SEO content for this edit? This will overwrite any existing content.')) return;
+        
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ Generating...';
+        btn.disabled = true;
+        
+        try {
+            const result = await this.api(`/taxonomy-seo/edits/${id}/generate`, { method: 'POST' });
+            
+            let message = 'Edit SEO generated!';
+            if (result.context) {
+                const cats = result.context.categories_used?.length || 0;
+                const brands = result.context.brands_used?.length || 0;
+                message += ` Used ${cats} categories and ${brands} brands.`;
+            }
+            this.toast(message, 'success');
+            
+            this.loadTaxonomySeoTab();
+        } catch (error) {
+            this.toast(error.message, 'error');
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    },
+    
+    async editEditSeo(id) {
+        try {
+            const edit = await this.api(`/taxonomy-seo/edits/${id}`);
+            
+            document.getElementById('seo-modal-title').textContent = `Edit SEO: ${edit.name}`;
+            document.getElementById('seo-edit-id').value = id;
+            document.getElementById('seo-edit-type').value = 'edit';
+            document.getElementById('seo-description').value = edit.seo_description || '';
+            document.getElementById('seo-meta-description').value = edit.seo_meta_description || '';
+            const wordCount = (edit.seo_meta_description || '').trim() ? (edit.seo_meta_description || '').trim().split(/\\s+/).length : 0;
+            document.getElementById('meta-char-count').textContent = wordCount;
+            
+            // Show related info
+            let relatedHtml = `<strong>Products in this edit:</strong> ${edit.product_ids?.length || 0}<br><br>`;
+            
+            if (edit.categories && edit.categories.length > 0) {
+                relatedHtml += `<strong>Categories:</strong> ${edit.categories.map(c => `${c.name} (${c.product_count})`).join(', ')}<br><br>`;
+            }
+            if (edit.brands && edit.brands.length > 0) {
+                relatedHtml += `<strong>Brands:</strong> ${edit.brands.map(b => `${b.name} (${b.product_count})`).join(', ')}`;
+            }
+            
+            document.getElementById('seo-related-info').innerHTML = relatedHtml;
+            document.getElementById('seo-modal').style.display = 'flex';
+        } catch (error) {
+            this.toast(error.message, 'error');
+        }
     },
     
     async generateBrandSeo(id) {
@@ -2049,14 +2376,24 @@ const App = {
         const id = document.getElementById('seo-edit-id').value;
         const type = document.getElementById('seo-edit-type').value;
         const description = document.getElementById('seo-description').value;
-        const metaDescription = document.getElementById('seo-meta-description').value;
+        const seoContent = document.getElementById('seo-meta-description').value;
+        
+        // Determine the correct API endpoint
+        let endpoint;
+        if (type === 'brand') {
+            endpoint = 'brands';
+        } else if (type === 'category') {
+            endpoint = 'categories';
+        } else if (type === 'edit') {
+            endpoint = 'edits';
+        }
         
         try {
-            await this.api(`/taxonomy-seo/${type === 'brand' ? 'brands' : 'categories'}/${id}`, {
+            await this.api(`/taxonomy-seo/${endpoint}/${id}`, {
                 method: 'PUT',
                 body: {
-                    seo_description: description,
-                    seo_meta_description: metaDescription
+                    description: description,
+                    seo_content: seoContent
                 }
             });
             this.toast('SEO content saved!', 'success');
@@ -2073,8 +2410,17 @@ const App = {
         
         if (!confirm('Push SEO content to WordPress? This will update the live site.')) return;
         
+        let endpoint;
+        if (type === 'brand') {
+            endpoint = 'brands';
+        } else if (type === 'category') {
+            endpoint = 'categories';
+        } else if (type === 'edit') {
+            endpoint = 'edits';
+        }
+        
         try {
-            await this.api(`/taxonomy-seo/${type === 'brand' ? 'brands' : 'categories'}/${id}/push`, { method: 'POST' });
+            await this.api(`/taxonomy-seo/${endpoint}/${id}/push`, { method: 'POST' });
             this.toast('SEO content pushed to WordPress!', 'success');
         } catch (error) {
             this.toast(error.message, 'error');
@@ -2087,10 +2433,19 @@ const App = {
         
         if (!confirm('Pull SEO content from WordPress? This will overwrite local changes.')) return;
         
+        let endpoint;
+        if (type === 'brand') {
+            endpoint = 'brands';
+        } else if (type === 'category') {
+            endpoint = 'categories';
+        } else if (type === 'edit') {
+            endpoint = 'edits';
+        }
+        
         try {
-            const result = await this.api(`/taxonomy-seo/${type === 'brand' ? 'brands' : 'categories'}/${id}/pull`, { method: 'POST' });
+            const result = await this.api(`/taxonomy-seo/${endpoint}/${id}/pull`, { method: 'POST' });
             
-            // Update the form with pulled data (using generic keys from API)
+            // Update the form with pulled data
             document.getElementById('seo-description').value = result.description || '';
             document.getElementById('seo-meta-description').value = result.meta_description || '';
             const wordCount = (result.meta_description || '').trim() ? (result.meta_description || '').trim().split(/\s+/).length : 0;
@@ -2584,6 +2939,16 @@ const App = {
                                 <div style="font-size:13px;color:var(--text-secondary);">${status.brands?.count || 0} synced${status.brands?.last_sync ? ' • Last: ' + new Date(status.brands.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
                             </div>
                             <button class="btn btn-secondary" onclick="App.runSync('brands')">Sync Now</button>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <div style="font-weight:500;">✨ Edits</div>
+                                <div style="font-size:13px;color:var(--text-secondary);">${status.edits?.count || 0} synced${status.edits?.last_sync ? ' • Last: ' + new Date(status.edits.last_sync).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : ''}</div>
+                            </div>
+                            <button class="btn btn-secondary" onclick="App.runSync('edits')">Sync Now</button>
                         </div>
                     </div>
                     
