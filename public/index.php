@@ -333,12 +333,7 @@ function routeApi(string $path, string $method, array $config): void
             echo json_encode(['success' => true, 'data' => 'Edit suggestions route works']);
             break;
         case $path === '/edit-suggestions' && $method === 'GET':
-            // TEMP DEBUG: Return hardcoded to confirm route works
-            echo json_encode(['success' => true, 'data' => [], 'debug' => 'hardcoded response - route works']);
-            break;
-            
-            // DISABLED FOR NOW - actual query code
-            /*
+            // Get all edit suggestions
             try {
                 $count = \App\Helpers\Database::query("SELECT COUNT(*) as cnt FROM edit_suggestions");
                 $numRows = (int)($count[0]['cnt'] ?? 0);
@@ -368,10 +363,11 @@ function routeApi(string $path, string $method, array $config): void
                 
                 echo json_encode(['success' => true, 'data' => $result]);
             } catch (\Throwable $e) {
+                error_log("Edit suggestions index error: " . $e->getMessage());
                 http_response_code(500);
-                echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage(), 'line' => $e->getLine()]]);
+                echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
             }
-            */
+            break;
         case $path === '/edit-suggestions' && $method === 'POST':
             // Inline create
             try {
@@ -402,7 +398,7 @@ function routeApi(string $path, string $method, array $config): void
                 );
                 if ((int)($tableCheck[0]['cnt'] ?? 0) === 0) {
                     http_response_code(400);
-                    echo json_encode(['success' => false, 'error' => ['message' => 'Run SQL migration first']]);
+                    echo json_encode(['success' => false, 'error' => ['message' => 'Table edit_suggestions does not exist. Run SQL migration first.']]);
                     break;
                 }
                 
@@ -423,23 +419,39 @@ function routeApi(string $path, string $method, array $config): void
                 
                 $created = 0;
                 $skipped = 0;
+                $errors = [];
+                
                 foreach ($templates as $t) {
-                    $slug = strtolower(preg_replace('/[^a-z0-9]+/', '-', str_replace("'", '', $t['name'])));
-                    $existing = \App\Helpers\Database::queryOne("SELECT id FROM edit_suggestions WHERE slug = ?", [$slug]);
-                    if ($existing) {
-                        $skipped++;
-                        continue;
+                    try {
+                        $slug = strtolower(preg_replace('/[^a-z0-9]+/', '-', str_replace("'", '', $t['name'])));
+                        $slug = trim($slug, '-');
+                        
+                        $existing = \App\Helpers\Database::queryOne("SELECT id FROM edit_suggestions WHERE slug = ?", [$slug]);
+                        if ($existing) {
+                            $skipped++;
+                            continue;
+                        }
+                        
+                        \App\Helpers\Database::insert(
+                            "INSERT INTO edit_suggestions (name, slug, description, source_type, matching_rules, status) VALUES (?, ?, ?, ?, ?, 'suggested')",
+                            [$t['name'], $slug, $t['desc'], $t['type'], json_encode($t['rules'])]
+                        );
+                        $created++;
+                    } catch (\Throwable $te) {
+                        $errors[] = $t['name'] . ': ' . $te->getMessage();
                     }
-                    \App\Helpers\Database::insert(
-                        "INSERT INTO edit_suggestions (name, slug, description, source_type, matching_rules, status) VALUES (?, ?, ?, ?, ?, 'suggested')",
-                        [$t['name'], $slug, $t['desc'], $t['type'], json_encode($t['rules'])]
-                    );
-                    $created++;
                 }
-                echo json_encode(['success' => true, 'data' => ['created' => $created, 'skipped' => $skipped], 'message' => "Created {$created}, skipped {$skipped}"]);
-            } catch (\Exception $e) {
+                
+                $response = ['success' => true, 'data' => ['created' => $created, 'skipped' => $skipped]];
+                if (!empty($errors)) {
+                    $response['data']['errors'] = $errors;
+                }
+                echo json_encode($response);
+                
+            } catch (\Throwable $e) {
+                error_log("Edit suggestions generate error: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
                 http_response_code(500);
-                echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
+                echo json_encode(['success' => false, 'error' => ['message' => 'Generate failed: ' . $e->getMessage()]]);
             }
             break;
         case $path === '/edit-suggestions/categories' && $method === 'GET':

@@ -2733,10 +2733,12 @@ const App = {
         try {
             this.toast('Generating edit suggestions...', 'info');
             const result = await this.api('/edit-suggestions/generate', { method: 'POST' });
-            this.toast(result.message, 'success');
+            // result is data.data from API, so message might be in result or we build it
+            const msg = result.message || `Created ${result.created || 0}, skipped ${result.skipped || 0}`;
+            this.toast(msg, 'success');
             this.loadEditManager();
         } catch (error) {
-            this.toast(error.message, 'error');
+            this.toast(error.message || 'Failed to generate suggestions', 'error');
         }
     },
     
