@@ -667,6 +667,7 @@ const App = {
                                         <option value="draft" ${post.status === 'draft' ? 'selected' : ''}>Draft</option>
                                         <option value="review" ${post.status === 'review' ? 'selected' : ''}>Review</option>
                                         <option value="scheduled" ${post.status === 'scheduled' ? 'selected' : ''}>Scheduled</option>
+                                        <option value="published" ${post.status === 'published' ? 'selected' : ''}>Published</option>
                                     </select>
                                 </div>
                                 
