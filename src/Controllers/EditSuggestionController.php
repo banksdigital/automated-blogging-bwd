@@ -392,10 +392,6 @@ class EditSuggestionController
             echo json_encode(['success' => false, 'error' => ['message' => 'Sync failed: ' . $e->getMessage()]]);
         }
     }
-            http_response_code(500);
-            echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
-        }
-    }
 
     public function create(array $input): void
     {
