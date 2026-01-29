@@ -224,6 +224,17 @@ class PostController
                 );
             }
 
+            // Handle sections if provided
+            if (isset($input['sections']) && is_array($input['sections'])) {
+                // Delete existing sections
+                Database::execute("DELETE FROM post_sections WHERE post_id = ?", [$id]);
+                
+                // Create new sections
+                foreach ($input['sections'] as $index => $section) {
+                    $this->createSection($id, $index, $section);
+                }
+            }
+
             $this->logActivity('post_updated', 'post', $id);
 
             echo json_encode([
@@ -412,6 +423,26 @@ class PostController
      */
     private function createSection(int $postId, int $index, array $data): int
     {
+        // Convert brand ID to slug if needed
+        $brandSlug = $data['carousel_brand_slug'] ?? null;
+        if (empty($brandSlug) && !empty($data['carousel_brand_id'])) {
+            $brand = Database::queryOne(
+                "SELECT slug FROM wp_brands WHERE wp_term_id = ?",
+                [$data['carousel_brand_id']]
+            );
+            $brandSlug = $brand['slug'] ?? null;
+        }
+        
+        // Convert category ID to slug if needed
+        $categorySlug = $data['carousel_category_slug'] ?? null;
+        if (empty($categorySlug) && !empty($data['carousel_category_id'])) {
+            $category = Database::queryOne(
+                "SELECT slug FROM wp_product_categories WHERE wp_term_id = ?",
+                [$data['carousel_category_id']]
+            );
+            $categorySlug = $category['slug'] ?? null;
+        }
+        
         return Database::insert(
             "INSERT INTO post_sections (post_id, section_index, heading, content, cta_text, cta_url,
                                        carousel_brand_slug, carousel_category_slug, carousel_taxonomy_filter,
@@ -424,8 +455,8 @@ class PostController
                 $data['content'] ?? '',
                 $data['cta_text'] ?? null,
                 $data['cta_url'] ?? null,
-                $data['carousel_brand_slug'] ?? null,
-                $data['carousel_category_slug'] ?? null,
+                $brandSlug,
+                $categorySlug,
                 isset($data['carousel_taxonomy_filter']) ? json_encode($data['carousel_taxonomy_filter']) : null,
                 $data['fallback_block_id'] ?? null
             ]

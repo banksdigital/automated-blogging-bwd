@@ -727,11 +727,11 @@ const App = {
     
     renderSection(section, index) {
         const brandOptions = (this.brandsList || []).map(b => 
-            `<option value="${b.wp_term_id}" ${section.carousel_brand_id == b.wp_term_id ? 'selected' : ''}>${this.escapeHtml(b.brand_name)}</option>`
+            `<option value="${b.slug || b.brand_slug}" ${section.carousel_brand_slug == (b.slug || b.brand_slug) ? 'selected' : ''}>${this.escapeHtml(b.brand_name)}</option>`
         ).join('');
         
         const categoryOptions = (this.categoriesList || []).map(c => 
-            `<option value="${c.wp_term_id}" ${section.carousel_category_id == c.wp_term_id ? 'selected' : ''}>${this.escapeHtml(c.name)}</option>`
+            `<option value="${c.slug}" ${section.carousel_category_slug == c.slug ? 'selected' : ''}>${this.escapeHtml(c.name)}</option>`
         ).join('');
         
         return `
@@ -804,8 +804,8 @@ const App = {
                 content: el.querySelector('.section-content').value,
                 cta_text: el.querySelector('.section-cta-text').value,
                 cta_url: el.querySelector('.section-cta-url').value,
-                carousel_brand_id: el.querySelector('.section-carousel-brand')?.value || null,
-                carousel_category_id: el.querySelector('.section-carousel-category')?.value || null
+                carousel_brand_slug: el.querySelector('.section-carousel-brand')?.value || null,
+                carousel_category_slug: el.querySelector('.section-carousel-category')?.value || null
             });
         });
         
@@ -4099,8 +4099,8 @@ const Claude = {
                 content: el.querySelector('.section-content')?.value || '',
                 cta_text: el.querySelector('.section-cta-text')?.value || '',
                 cta_url: el.querySelector('.section-cta-url')?.value || '',
-                carousel_brand_id: el.querySelector('.section-carousel-brand')?.value || null,
-                carousel_category_id: el.querySelector('.section-carousel-category')?.value || null
+                carousel_brand_slug: el.querySelector('.section-carousel-brand')?.value || null,
+                carousel_category_slug: el.querySelector('.section-carousel-category')?.value || null
             });
         });
         
@@ -4161,13 +4161,13 @@ const Claude = {
                     if (sectionUpdate.cta_url !== undefined) {
                         sectionEl.querySelector('.section-cta-url').value = sectionUpdate.cta_url;
                     }
-                    if (sectionUpdate.carousel_brand_id !== undefined) {
+                    if (sectionUpdate.carousel_brand_slug !== undefined) {
                         const brandSelect = sectionEl.querySelector('.section-carousel-brand');
-                        if (brandSelect) brandSelect.value = sectionUpdate.carousel_brand_id || '';
+                        if (brandSelect) brandSelect.value = sectionUpdate.carousel_brand_slug || '';
                     }
-                    if (sectionUpdate.carousel_category_id !== undefined) {
+                    if (sectionUpdate.carousel_category_slug !== undefined) {
                         const catSelect = sectionEl.querySelector('.section-carousel-category');
-                        if (catSelect) catSelect.value = sectionUpdate.carousel_category_id || '';
+                        if (catSelect) catSelect.value = sectionUpdate.carousel_category_slug || '';
                     }
                     changesMade.push(`Section ${sectionUpdate.index + 1} updated`);
                 } else if (sectionsContainer) {
@@ -4181,14 +4181,14 @@ const Claude = {
                         content: sectionUpdate.content || '',
                         cta_text: sectionUpdate.cta_text || '',
                         cta_url: sectionUpdate.cta_url || '',
-                        carousel_brand_id: sectionUpdate.carousel_brand_id || null,
-                        carousel_category_id: sectionUpdate.carousel_category_id || null
+                        carousel_brand_slug: sectionUpdate.carousel_brand_slug || null,
+                        carousel_category_slug: sectionUpdate.carousel_category_slug || null
                     };
                     
                     // Log what we're creating for debugging
                     console.log('Creating new section with carousel:', {
-                        brand_id: newSection.carousel_brand_id,
-                        category_id: newSection.carousel_category_id
+                        brand_id: newSection.carousel_brand_slug,
+                        category_id: newSection.carousel_category_slug
                     });
                     
                     // Get current section count
@@ -4202,18 +4202,18 @@ const Claude = {
                     // After inserting, manually set the select values (in case renderSection didn't match)
                     setTimeout(() => {
                         const newSectionEl = document.querySelector(`.section-item[data-index="${newIndex}"]`);
-                        if (newSectionEl && newSection.carousel_brand_id) {
+                        if (newSectionEl && newSection.carousel_brand_slug) {
                             const brandSelect = newSectionEl.querySelector('.section-carousel-brand');
                             if (brandSelect) {
-                                brandSelect.value = newSection.carousel_brand_id;
-                                console.log('Set brand select to:', newSection.carousel_brand_id, 'Result:', brandSelect.value);
+                                brandSelect.value = newSection.carousel_brand_slug;
+                                console.log('Set brand select to:', newSection.carousel_brand_slug, 'Result:', brandSelect.value);
                             }
                         }
-                        if (newSectionEl && newSection.carousel_category_id) {
+                        if (newSectionEl && newSection.carousel_category_slug) {
                             const catSelect = newSectionEl.querySelector('.section-carousel-category');
                             if (catSelect) {
-                                catSelect.value = newSection.carousel_category_id;
-                                console.log('Set category select to:', newSection.carousel_category_id, 'Result:', catSelect.value);
+                                catSelect.value = newSection.carousel_category_slug;
+                                console.log('Set category select to:', newSection.carousel_category_slug, 'Result:', catSelect.value);
                             }
                         }
                     }, 100);
