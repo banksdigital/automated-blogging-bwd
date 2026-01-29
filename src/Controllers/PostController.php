@@ -294,8 +294,14 @@ class PostController
     /**
      * Publish post to WordPress
      */
-    public function publish(int $id): void
+    public function publish(int $id, array $input = []): void
     {
+        // Get requested WordPress status (draft or publish)
+        $wpStatus = $input['wp_status'] ?? 'publish';
+        if (!in_array($wpStatus, ['draft', 'publish'])) {
+            $wpStatus = 'publish';
+        }
+        
         $post = Database::queryOne(
             "SELECT p.*, wc.wp_category_id as category_wp_id, wa.wp_user_id as author_wp_id
              FROM posts p
@@ -337,7 +343,7 @@ class PostController
             $wpData = [
                 'title' => $post['title'],
                 'content' => $wpContent,
-                'status' => 'publish',
+                'status' => $wpStatus,
                 'meta_description' => $post['meta_description']
             ];
 
@@ -357,19 +363,24 @@ class PostController
             }
 
             // Update local record
+            $localStatus = ($wpStatus === 'publish') ? 'published' : 'scheduled';
             Database::execute(
-                "UPDATE posts SET status = 'published', wp_post_id = ?, published_date = NOW() WHERE id = ?",
-                [$result['id'], $id]
+                "UPDATE posts SET status = ?, wp_post_id = ?, published_date = " . ($wpStatus === 'publish' ? 'NOW()' : 'NULL') . " WHERE id = ?",
+                [$localStatus, $result['id'], $id]
             );
 
-            $this->logActivity('post_published', 'post', $id, ['wp_post_id' => $result['id']]);
+            $this->logActivity('post_published', 'post', $id, ['wp_post_id' => $result['id'], 'wp_status' => $wpStatus]);
 
+            $statusMessage = ($wpStatus === 'publish') ? 'published' : 'saved as draft';
             echo json_encode([
                 'success' => true,
                 'data' => [
-                    'message' => 'Post published successfully',
+                    'message' => "Post {$statusMessage} to WordPress successfully",
                     'wp_post_id' => $result['id'],
-                    'url' => $result['link'] ?? null
+                    'wp_status' => $wpStatus,
+                    'url' => $result['link'] ?? null,
+                    'edit_url' => rtrim($this->config['wordpress']['site_url'] ?? '', '/') . '/wp-admin/post.php?post=' . $result['id'] . '&action=edit',
+                    'view_url' => $result['link'] ?? null
                 ]
             ]);
 

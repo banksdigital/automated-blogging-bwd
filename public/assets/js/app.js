@@ -842,7 +842,8 @@ const App = {
         const status = await this.showPublishDialog();
         if (!status) return;
         
-        this.toast('Publishing to WordPress...');
+        const statusText = status === 'publish' ? 'Publishing' : 'Saving draft';
+        this.toast(`${statusText} to WordPress...`);
         
         try {
             const result = await this.api(`/posts/${postId}/publish`, {
@@ -850,7 +851,8 @@ const App = {
                 body: { wp_status: status }
             });
             
-            this.toast('Published to WordPress!', 'success');
+            const successText = status === 'publish' ? 'Published' : 'Saved as draft';
+            this.toast(`${successText} to WordPress!`, 'success');
             
             // Show success modal with links
             const modal = document.createElement('div');
@@ -858,17 +860,17 @@ const App = {
             modal.innerHTML = `
                 <div class="modal" style="max-width:450px;">
                     <div class="modal-header">
-                        <h3 class="modal-title">🎉 Published Successfully!</h3>
+                        <h3 class="modal-title">${status === 'publish' ? '🎉 Published Successfully!' : '📝 Saved as Draft!'}</h3>
                     </div>
                     <div class="modal-body">
-                        <p style="margin-bottom:16px;">Your post has been sent to WordPress.</p>
+                        <p style="margin-bottom:16px;">Your post has been ${status === 'publish' ? 'published' : 'saved as a draft'} to WordPress.</p>
                         <div style="display:flex;flex-direction:column;gap:12px;">
                             <a href="${result.edit_url}" target="_blank" class="btn btn-secondary" style="text-align:center;text-decoration:none;">
                                 ✏️ Edit in WordPress
                             </a>
-                            <a href="${result.view_url}" target="_blank" class="btn btn-primary" style="text-align:center;text-decoration:none;">
+                            ${status === 'publish' ? `<a href="${result.view_url}" target="_blank" class="btn btn-primary" style="text-align:center;text-decoration:none;">
                                 👁️ View Post
-                            </a>
+                            </a>` : ''}
                         </div>
                     </div>
                     <div class="modal-footer">

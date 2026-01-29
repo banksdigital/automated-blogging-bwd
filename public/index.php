@@ -173,7 +173,7 @@ function routeApi(string $path, string $method, array $config): void
             (new \App\Controllers\PostController($config))->delete((int)$m[1]);
             break;
         case preg_match('#^/posts/(\d+)/publish$#', $path, $m) && $method === 'POST':
-            (new \App\Controllers\PostController($config))->publish((int)$m[1]);
+            (new \App\Controllers\PostController($config))->publish((int)$m[1], $input);
             break;
         case preg_match('#^/posts/(\d+)/preview$#', $path, $m) && $method === 'GET':
             (new \App\Controllers\PostController($config))->preview((int)$m[1]);
