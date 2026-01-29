@@ -42,18 +42,18 @@ return [
     // Application
     'app' => [
         'env' => env('APP_ENV', 'production'),
-        'url' => env('APP_URL', 'https://automated-blogging-bwd-5x8fk.kinsta.app/'),
+        'url' => env('APP_URL', 'https://automated-blogging-bwd-5x8fk.kinsta.app'),
         'secret' => env('APP_SECRET'),
         'debug' => env('APP_ENV') === 'development',
     ],
     
 // Database
 'database' => [
-    'host' => env('DB_HOST', 'contemporary-yellow-pheasan-uddqj-mysql.contemporary-yellow-pheasan-uddqj.svc.cluster.local'),
-    'port' => env('DB_PORT', '3306'),
-    'name' => env('DB_DATABASE', env('DB_NAME', 'contemporary-yellow-pheasant')),
-    'user' => env('DB_USERNAME', env('DB_USER', 'tahr')),
-    'password' => env('DB_PASSWORD', 'tX7+tE7_gL0_rJ0-uK6-'),
+    'host' => env('DB_HOST'),
+    'port' => env('DB_PORT', 3306),
+    'name' => env('DB_DATABASE', env('DB_NAME')),
+    'user' => env('DB_USERNAME', env('DB_USER')),
+    'password' => env('DB_PASSWORD'),
     'charset' => 'utf8mb4',
 ],
     
