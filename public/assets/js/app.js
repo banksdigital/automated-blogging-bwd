@@ -843,7 +843,7 @@ const App = {
         this.toast('Publishing to WordPress...');
         
         try {
-            const result = await this.api(`/wordpress/publish/${postId}`, {
+            const result = await this.api(`/posts/${postId}/publish`, {
                 method: 'POST',
                 body: { wp_status: status }
             });
