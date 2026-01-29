@@ -178,6 +178,9 @@ function routeApi(string $path, string $method, array $config): void
         case preg_match('#^/posts/(\d+)/preview$#', $path, $m) && $method === 'GET':
             (new \App\Controllers\PostController($config))->preview((int)$m[1]);
             break;
+        case preg_match('#^/posts/(\d+)/unlink$#', $path, $m) && $method === 'POST':
+            (new \App\Controllers\PostController($config))->unlinkFromWordPress((int)$m[1]);
+            break;
             
         // Sections
         case preg_match('#^/posts/(\d+)/sections$#', $path, $m) && $method === 'POST':

@@ -612,6 +612,7 @@ const App = {
                             <button class="btn" style="background:var(--status-published);color:white;" onclick="App.publishToWordPress(${id})">
                                 ${isPublished ? '↻ Update in WordPress' : '🚀 Publish to WordPress'}
                             </button>
+                            ${isPublished ? `<button class="btn btn-secondary" onclick="App.unlinkFromWordPress(${id})" title="Unlink from WordPress so you can republish as a new post">🔗 Unlink</button>` : ''}
                         ` : ''}
                     </div>
                 </div>
@@ -882,6 +883,30 @@ const App = {
             
         } catch (error) {
             this.toast(error.message || 'Failed to publish', 'error');
+        }
+    },
+    
+    async unlinkFromWordPress(postId) {
+        const confirmed = confirm(
+            'This will unlink this post from WordPress.\n\n' +
+            'Use this if the WordPress post was deleted and you want to republish as a new post.\n\n' +
+            'Continue?'
+        );
+        
+        if (!confirmed) return;
+        
+        try {
+            const result = await this.api(`/posts/${postId}/unlink`, {
+                method: 'POST'
+            });
+            
+            this.toast(result.message || 'Post unlinked from WordPress', 'success');
+            
+            // Reload the post editor to show updated state
+            this.loadPostEditor(postId);
+            
+        } catch (error) {
+            this.toast(error.message || 'Failed to unlink', 'error');
         }
     },
     

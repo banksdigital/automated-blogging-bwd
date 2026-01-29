@@ -385,6 +385,53 @@ class PostController
     }
 
     /**
+     * Unlink post from WordPress (clear wp_post_id so it can be republished as new)
+     */
+    public function unlinkFromWordPress(int $id): void
+    {
+        $post = Database::queryOne("SELECT id, wp_post_id FROM posts WHERE id = ?", [$id]);
+
+        if (!$post) {
+            http_response_code(404);
+            echo json_encode([
+                'success' => false,
+                'error' => ['code' => 'NOT_FOUND', 'message' => 'Post not found']
+            ]);
+            return;
+        }
+
+        if (!$post['wp_post_id']) {
+            echo json_encode([
+                'success' => true,
+                'data' => ['message' => 'Post is not linked to WordPress']
+            ]);
+            return;
+        }
+
+        try {
+            Database::execute(
+                "UPDATE posts SET wp_post_id = NULL, status = 'draft' WHERE id = ?",
+                [$id]
+            );
+
+            $this->logActivity('post_unlinked', 'post', $id, ['old_wp_post_id' => $post['wp_post_id']]);
+
+            echo json_encode([
+                'success' => true,
+                'data' => ['message' => 'Post unlinked from WordPress. You can now republish it as a new post.']
+            ]);
+
+        } catch (\Exception $e) {
+            error_log("Unlink error: " . $e->getMessage());
+            http_response_code(500);
+            echo json_encode([
+                'success' => false,
+                'error' => ['code' => 'UNLINK_ERROR', 'message' => 'Failed to unlink post']
+            ]);
+        }
+    }
+
+    /**
      * Preview generated shortcode
      */
     public function preview(int $id): void
