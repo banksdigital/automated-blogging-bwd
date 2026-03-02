@@ -41,6 +41,8 @@ class EditSuggestionController
             }
 
             $edits = Database::query("SELECT * FROM edit_suggestions ORDER BY name ASC");
+            
+            error_log("EditSuggestionController::index - Found " . count($edits) . " edit suggestions");
 
             foreach ($edits as &$edit) {
                 $edit['matching_rules'] = json_decode($edit['matching_rules'] ?? '{}', true);
@@ -49,25 +51,29 @@ class EditSuggestionController
                 $counts = Database::queryOne(
                     "SELECT 
                         COUNT(*) as total,
-                        SUM(CASE WHEN ep.status = 'pending' THEN 1 ELSE 0 END) as pending,
-                        SUM(CASE WHEN ep.status = 'approved' THEN 1 ELSE 0 END) as approved,
-                        SUM(CASE WHEN ep.synced_to_wp = 1 THEN 1 ELSE 0 END) as synced,
-                        SUM(CASE WHEN p.stock_status = 'instock' THEN 1 ELSE 0 END) as in_stock
+                        COALESCE(SUM(CASE WHEN ep.status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
+                        COALESCE(SUM(CASE WHEN ep.status = 'approved' THEN 1 ELSE 0 END), 0) as approved,
+                        COALESCE(SUM(CASE WHEN ep.status = 'synced' THEN 1 ELSE 0 END), 0) as synced_status,
+                        COALESCE(SUM(CASE WHEN ep.synced_to_wp = 1 THEN 1 ELSE 0 END), 0) as synced,
+                        COALESCE(SUM(CASE WHEN p.stock_status = 'instock' THEN 1 ELSE 0 END), 0) as in_stock
                      FROM edit_products ep
                      LEFT JOIN wp_products p ON ep.wc_product_id = p.wc_product_id
                      WHERE ep.edit_suggestion_id = ?",
                     [$edit['id']]
                 );
                 
+                error_log("Edit '{$edit['name']}' (id={$edit['id']}): total={$counts['total']}, in_stock={$counts['in_stock']}, synced={$counts['synced']}");
+                
                 $edit['total_products'] = (int)($counts['total'] ?? 0);
                 $edit['in_stock_products'] = (int)($counts['in_stock'] ?? 0);
                 $edit['pending_products'] = (int)($counts['pending'] ?? 0);
                 $edit['approved_products'] = (int)($counts['approved'] ?? 0);
-                $edit['synced_products'] = (int)($counts['synced'] ?? 0);
+                $edit['synced_products'] = (int)($counts['synced'] ?? 0) + (int)($counts['synced_status'] ?? 0);
             }
 
             echo json_encode(['success' => true, 'data' => $edits]);
         } catch (\Exception $e) {
+            error_log("EditSuggestionController::index error: " . $e->getMessage());
             http_response_code(500);
             echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
         }
@@ -407,6 +413,8 @@ class EditSuggestionController
                     "UPDATE wp_edits SET count = ? WHERE wp_term_id = ?",
                     [(int)($syncedCount['cnt'] ?? 0), $edit['wp_term_id']]
                 );
+                
+                error_log("syncToWordPress: Updated wp_edits count to {$syncedCount['cnt']} for wp_term_id {$edit['wp_term_id']}");
             }
 
             $response = [
