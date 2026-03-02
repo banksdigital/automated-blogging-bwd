@@ -44,10 +44,26 @@ class EditSuggestionController
 
             foreach ($edits as &$edit) {
                 $edit['matching_rules'] = json_decode($edit['matching_rules'] ?? '{}', true);
-                $edit['total_products'] = 0;
-                $edit['in_stock_products'] = 0;
-                $edit['pending_products'] = 0;
-                $edit['synced_products'] = 0;
+                
+                // Get actual product counts from edit_products table
+                $counts = Database::queryOne(
+                    "SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN ep.status = 'pending' THEN 1 ELSE 0 END) as pending,
+                        SUM(CASE WHEN ep.status = 'approved' THEN 1 ELSE 0 END) as approved,
+                        SUM(CASE WHEN ep.synced_to_wp = 1 THEN 1 ELSE 0 END) as synced,
+                        SUM(CASE WHEN p.stock_status = 'instock' THEN 1 ELSE 0 END) as in_stock
+                     FROM edit_products ep
+                     LEFT JOIN wp_products p ON ep.wc_product_id = p.wc_product_id
+                     WHERE ep.edit_suggestion_id = ?",
+                    [$edit['id']]
+                );
+                
+                $edit['total_products'] = (int)($counts['total'] ?? 0);
+                $edit['in_stock_products'] = (int)($counts['in_stock'] ?? 0);
+                $edit['pending_products'] = (int)($counts['pending'] ?? 0);
+                $edit['approved_products'] = (int)($counts['approved'] ?? 0);
+                $edit['synced_products'] = (int)($counts['synced'] ?? 0);
             }
 
             echo json_encode(['success' => true, 'data' => $edits]);
@@ -296,7 +312,13 @@ class EditSuggestionController
                 return;
             }
             if ($edit['wp_term_id']) {
-                echo json_encode(['success' => true, 'message' => 'Already exists']);
+                echo json_encode([
+                    'success' => true, 
+                    'data' => [
+                        'wp_term_id' => $edit['wp_term_id'],
+                        'message' => 'Already exists in WordPress'
+                    ]
+                ]);
                 return;
             }
 
@@ -309,7 +331,13 @@ class EditSuggestionController
             Database::execute("UPDATE edit_suggestions SET wp_term_id = ?, status = 'created' WHERE id = ?", [$termId, $id]);
             Database::execute("INSERT INTO wp_edits (wp_term_id, name, slug, synced_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE name = VALUES(name)", [$termId, $edit['name'], $edit['slug']]);
 
-            echo json_encode(['success' => true, 'message' => 'Created in WordPress']);
+            echo json_encode([
+                'success' => true, 
+                'data' => [
+                    'wp_term_id' => $termId,
+                    'message' => 'Created in WordPress'
+                ]
+            ]);
         } catch (\Exception $e) {
             http_response_code(500);
             echo json_encode(['success' => false, 'error' => ['message' => $e->getMessage()]]);
