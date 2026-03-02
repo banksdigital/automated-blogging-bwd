@@ -669,13 +669,31 @@ class TaxonomySeoController
                     e.wp_term_id,
                     e.name,
                     e.slug,
-                    e.count as product_count,
+                    e.count as wp_count,
                     e.seo_description,
                     e.seo_meta_description,
                     e.seo_updated_at
                  FROM wp_edits e
                  ORDER BY e.name ASC"
             );
+            
+            // Enhance with local product counts from edit_products table
+            foreach ($edits as &$edit) {
+                // Try to get count from edit_suggestions/edit_products (local data)
+                $localCount = Database::queryOne(
+                    "SELECT COUNT(*) as cnt 
+                     FROM edit_products ep 
+                     JOIN edit_suggestions es ON ep.edit_suggestion_id = es.id 
+                     WHERE es.wp_term_id = ? AND ep.synced_to_wp = 1",
+                    [$edit['wp_term_id']]
+                );
+                
+                // Use local synced count if available, otherwise use WP count
+                $edit['product_count'] = max(
+                    (int)($localCount['cnt'] ?? 0),
+                    (int)($edit['wp_count'] ?? 0)
+                );
+            }
             
             echo json_encode([
                 'success' => true,

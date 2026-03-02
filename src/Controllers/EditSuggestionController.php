@@ -397,6 +397,16 @@ class EditSuggestionController
 
             if ($added > 0) {
                 Database::execute("UPDATE edit_suggestions SET status = 'active', wp_synced_at = NOW() WHERE id = ?", [$id]);
+                
+                // Update wp_edits.count to reflect synced products
+                $syncedCount = Database::queryOne(
+                    "SELECT COUNT(*) as cnt FROM edit_products WHERE edit_suggestion_id = ? AND synced_to_wp = 1",
+                    [$id]
+                );
+                Database::execute(
+                    "UPDATE wp_edits SET count = ? WHERE wp_term_id = ?",
+                    [(int)($syncedCount['cnt'] ?? 0), $edit['wp_term_id']]
+                );
             }
 
             $response = [
